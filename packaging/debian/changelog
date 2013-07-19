@@ -1,3 +1,9 @@
+ansible (1.2.2-acd1) unstable; urgency=low
+
+  * 1.2.2 release
+
+ -- Serge van Ginderachter <serge@vanginderachter.be>  Fri, 19 Jul 2013 12:43:27 +0200
+
 ansible (1.2.2) unstable; urgency=low
   
   * 1.2.2 release
