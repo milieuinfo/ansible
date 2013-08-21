@@ -23,7 +23,9 @@ import pipes
 import random
 import select
 import fcntl
+import hmac
 import pwd
+from hashlib import sha1
 import ansible.constants as C
 from ansible.callbacks import vvv
 from ansible import errors
@@ -39,6 +41,8 @@ class Connection(object):
         self.user = user
         self.password = password
         self.private_key_file = private_key_file
+        self.cp_dir = utils.prepare_writeable_dir('$HOME/.ansible/cp',mode=0700)
+        self.HASHED_KEY_MAGIC = "|1|"
 
     def connect(self):
         ''' connect to the remote host '''
@@ -52,7 +56,18 @@ class Connection(object):
         else:
             self.common_args += ["-o", "ControlMaster=auto",
                                  "-o", "ControlPersist=60s",
-                                 "-o", "ControlPath=/tmp/ansible-ssh-%h-%p-%r"]
+                                 "-o", "ControlPath=%s/ansible-ssh-%%h-%%p-%%r" % self.cp_dir]
+
+        cp_in_use = False
+        cp_path_set = False
+        for arg in self.common_args:
+            if arg.find("ControlPersist") != -1:
+                cp_in_use = True
+            if arg.find("ControlPath") != -1:
+                cp_path_set = True
+
+        if cp_in_use and not cp_path_set:
+            self.common_args += ["-o", "ControlPath=%s/ansible-ssh-%%h-%%p-%%r" % self.cp_dir]
 
         if not C.HOST_KEY_CHECKING:
             self.common_args += ["-o", "StrictHostKeyChecking=no"]
@@ -105,8 +120,21 @@ class Connection(object):
             if line is None or line.find(" ") == -1:
                 continue
             tokens = line.split()
-            if host in tokens[0]:
-                return False
+            if tokens[0].find(self.HASHED_KEY_MAGIC) == 0:
+                # this is a hashed known host entry
+                try:
+                    (kn_salt,kn_host) = tokens[0][len(self.HASHED_KEY_MAGIC):].split("|",2)
+                    hash = hmac.new(kn_salt.decode('base64'), digestmod=sha1)
+                    hash.update(host)
+                    if hash.digest() == kn_host.decode('base64'):
+                        return False
+                except:
+                    # invalid hashed host key, skip it
+                    continue
+            else:
+                # standard host file entry
+                if host in tokens[0]:
+                    return False
         return True
 
     def exec_command(self, cmd, tmp_path, sudo_user,sudoable=False, executable='/bin/sh'):
