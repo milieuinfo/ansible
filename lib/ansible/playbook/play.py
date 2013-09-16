@@ -111,7 +111,7 @@ class Play(object):
         self.transport        = ds.get('connection', self.playbook.transport)
         self.gather_facts     = ds.get('gather_facts', None)
         self.remote_port      = self.remote_port
-        self.any_errors_fatal = ds.get('any_errors_fatal', False)
+        self.any_errors_fatal = utils.boolean(ds.get('any_errors_fatal', 'false'))
         self.accelerate       = utils.boolean(ds.get('accelerate', 'false'))
         self.accelerate_port  = ds.get('accelerate_port', None)
         self.max_fail_pct     = int(ds.get('max_fail_percentage', 100))
@@ -164,7 +164,7 @@ class Play(object):
             raise errors.AnsibleError("too many levels of recursion while resolving role dependencies")
         for role in roles:
             role_path,role_vars = self._get_role_path(role)
-            role_vars = utils.combine_vars(role_vars, passed_vars)
+            role_vars = utils.combine_vars(passed_vars, role_vars)
             vars = self._resolve_main(utils.path_dwim(self.basedir, os.path.join(role_path, 'vars')))
             vars_data = {}
             if os.path.isfile(vars):

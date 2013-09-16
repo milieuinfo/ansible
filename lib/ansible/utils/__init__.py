@@ -164,14 +164,25 @@ def check_conditional(conditional, basedir, inject, fail_on_undefined=False, jin
     if conditional.startswith("jinja2_compare"):
         conditional = conditional.replace("jinja2_compare ","")
         # allow variable names
-        if conditional in inject:
+        if conditional in inject and str(inject[conditional]).find('-') == -1:
             conditional = inject[conditional]
         conditional = template.template(basedir, conditional, inject, fail_on_undefined=fail_on_undefined)
         # a Jinja2 evaluation that results in something Python can eval!
         presented = "{%% if %s %%} True {%% else %%} False {%% endif %%}" % conditional
         conditional = template.template(basedir, presented, inject)
-        val = conditional.lstrip().rstrip()
-        if val == "True":
+        val = conditional.strip()
+        if val == presented:
+            # the templating failed, meaning most likely a 
+            # variable was undefined. If we happened to be 
+            # looking for an undefined variable, return True,
+            # otherwise fail
+            if conditional.find("is undefined") != -1:
+                return True
+            elif conditional.find("is defined") != -1:
+                return False
+            else:
+                raise errors.AnsibleError("error while evaluating conditional: %s" % conditional)
+        elif val == "True":
             return True
         elif val == "False":
             return False
