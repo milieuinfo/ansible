@@ -222,6 +222,8 @@ class AnsibleModule(object):
         path = params.get('path', params.get('dest', None))
         if path is None:
             return {}
+        else:
+            path = os.path.expanduser(path)
 
         mode   = params.get('mode', None)
         owner  = params.get('owner', None)
@@ -231,7 +233,7 @@ class AnsibleModule(object):
         seuser    = params.get('seuser', None)
         serole    = params.get('serole', None)
         setype    = params.get('setype', None)
-        selevel   = params.get('serange', 's0')
+        selevel   = params.get('selevel', None)
         secontext = [seuser, serole, setype]
 
         if self.selinux_mls_enabled():
@@ -307,7 +309,9 @@ class AnsibleModule(object):
             return context
         if ret[0] == -1:
             return context
-        context = ret[1].split(':')
+        # Limit split to 4 because the selevel, the last in the list,
+        # may contain ':' characters
+        context = ret[1].split(':', 3)
         return context
 
     def selinux_context(self, path):
@@ -315,7 +319,7 @@ class AnsibleModule(object):
         if not HAVE_SELINUX or not self.selinux_enabled():
             return context
         try:
-            ret = selinux.lgetfilecon(self._to_filesystem_str(path))
+            ret = selinux.lgetfilecon_raw(self._to_filesystem_str(path))
         except OSError, e:
             if e.errno == errno.ENOENT:
                 self.fail_json(path=path, msg='path %s does not exist' % path)
@@ -323,7 +327,9 @@ class AnsibleModule(object):
                 self.fail_json(path=path, msg='failed to retrieve selinux context')
         if ret[0] == -1:
             return context
-        context = ret[1].split(':')
+        # Limit split to 4 because the selevel, the last in the list,
+        # may contain ':' characters
+        context = ret[1].split(':', 3)
         return context
 
     def user_and_group(self, filename):

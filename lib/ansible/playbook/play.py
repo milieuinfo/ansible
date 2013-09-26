@@ -39,7 +39,7 @@ class Play(object):
     # and don't line up 1:1 with how they are stored
     VALID_KEYS = [
        'hosts', 'name', 'vars', 'vars_prompt', 'vars_files',
-       'tasks', 'handlers', 'user', 'port', 'include', 'accelerate', 'accelerate_port',
+       'tasks', 'handlers', 'remote_user', 'user', 'port', 'include', 'accelerate', 'accelerate_port',
        'sudo', 'sudo_user', 'connection', 'tags', 'gather_facts', 'serial',
        'any_errors_fatal', 'roles', 'pre_tasks', 'post_tasks', 'max_fail_percentage' 
     ]
@@ -104,7 +104,7 @@ class Play(object):
         self.name             = ds.get('name', self.hosts)
         self._tasks           = ds.get('tasks', [])
         self._handlers        = ds.get('handlers', [])
-        self.remote_user      = ds.get('user', self.playbook.remote_user)
+        self.remote_user      = ds.get('remote_user', ds.get('user', self.playbook.remote_user))
         self.remote_port      = ds.get('port', self.playbook.remote_port)
         self.sudo             = ds.get('sudo', self.playbook.sudo)
         self.sudo_user        = ds.get('sudo_user', self.playbook.sudo_user)
@@ -274,25 +274,34 @@ class Play(object):
             task_basepath     = utils.path_dwim(self.basedir, os.path.join(role_path, 'tasks'))
             handler_basepath  = utils.path_dwim(self.basedir, os.path.join(role_path, 'handlers'))
             vars_basepath     = utils.path_dwim(self.basedir, os.path.join(role_path, 'vars'))
+            meta_basepath     = utils.path_dwim(self.basedir, os.path.join(role_path, 'meta'))
             defaults_basepath = utils.path_dwim(self.basedir, os.path.join(role_path, 'defaults'))
 
             task      = self._resolve_main(task_basepath)
             handler   = self._resolve_main(handler_basepath)
             vars_file = self._resolve_main(vars_basepath)
+            meta_file = self._resolve_main(meta_basepath)
             defaults_file = self._resolve_main(defaults_basepath)
 
             library   = utils.path_dwim(self.basedir, os.path.join(role_path, 'library'))
 
-            if not os.path.isfile(task) and not os.path.isfile(handler) and not os.path.isfile(vars_file) and not os.path.isdir(library):
-                raise errors.AnsibleError("found role at %s, but cannot find %s or %s or %s or %s" % (role_path, task, handler, vars_file, library))
+            missing = lambda f: not os.path.isfile(f)
+            if missing(task) and missing(handler) and missing(vars_file) and missing(meta_file) and missing(library):
+                raise errors.AnsibleError("found role at %s, but cannot find %s or %s or %s or %s or %s" % (role_path, task, handler, vars_file, meta_file, library))
+
+            if isinstance(role, dict):
+                role_name = role['role']
+            else:
+                role_name = role
+
             if os.path.isfile(task):
-                nt = dict(include=pipes.quote(task), vars=role_vars, default_vars=default_vars)
+                nt = dict(include=pipes.quote(task), vars=role_vars, default_vars=default_vars, role_name=role_name)
                 for k in special_keys:
                     if k in special_vars:
                         nt[k] = special_vars[k]
                 new_tasks.append(nt)
             if os.path.isfile(handler):
-                nt = dict(include=pipes.quote(handler), vars=role_vars)
+                nt = dict(include=pipes.quote(handler), vars=role_vars, role_name=role_name)
                 for k in special_keys:
                     if k in special_vars:
                         nt[k] = special_vars[k]
@@ -356,7 +365,7 @@ class Play(object):
 
     # *************************************************
 
-    def _load_tasks(self, tasks, vars={}, default_vars={}, sudo_vars={}, additional_conditions=[], original_file=None):
+    def _load_tasks(self, tasks, vars={}, default_vars={}, sudo_vars={}, additional_conditions=[], original_file=None, role_name=None):
         ''' handle task and handler include statements '''
 
         results = []
@@ -391,6 +400,7 @@ class Play(object):
                 tokens = shlex.split(str(x['include']))
                 items = ['']
                 included_additional_conditions = list(additional_conditions)
+                include_vars = {}
                 for k in x:
                     if k.startswith("with_"):
                         plugin_name = k[5:]
@@ -402,16 +412,30 @@ class Play(object):
                         included_additional_conditions.insert(0, utils.compile_when_to_only_if("%s %s" % (k[5:], x[k])))
                     elif k == 'when':
                         included_additional_conditions.insert(0, utils.compile_when_to_only_if("jinja2_compare %s" % x[k]))
-                    elif k in ("include", "vars", "default_vars", "only_if", "sudo", "sudo_user"):
-                        pass
+                    elif k in ("include", "vars", "default_vars", "only_if", "sudo", "sudo_user", "role_name"):
+                        continue
                     else:
-                        raise errors.AnsibleError("parse error: task includes cannot be used with other directives: %s" % k)
+                        include_vars[k] = x[k]
 
-                default_vars = utils.combine_vars(self.default_vars, x.get('default_vars', {}))
+                default_vars = x.get('default_vars', {})
+                if not default_vars:
+                    default_vars = self.default_vars
+                else:
+                    default_vars = utils.combine_vars(self.default_vars, default_vars)
+
+                # append the vars defined with the include (from above) 
+                # as well as the old-style 'vars' element. The old-style
+                # vars are given higher precedence here (just in case)
+                task_vars = utils.combine_vars(task_vars, include_vars)
                 if 'vars' in x:
                     task_vars = utils.combine_vars(task_vars, x['vars'])
+
                 if 'only_if' in x:
                     included_additional_conditions.append(x['only_if'])
+
+                new_role = None
+                if 'role_name' in x:
+                    new_role = x['role_name']
 
                 for item in items:
                     mv = task_vars.copy()
@@ -425,9 +449,9 @@ class Play(object):
                     include_file = template(dirname, tokens[0], mv)
                     include_filename = utils.path_dwim(dirname, include_file)
                     data = utils.parse_yaml_from_file(include_filename)
-                    results += self._load_tasks(data, mv, default_vars, included_sudo_vars, included_additional_conditions, original_file=include_filename)
+                    results += self._load_tasks(data, mv, default_vars, included_sudo_vars, included_additional_conditions, original_file=include_filename, role_name=new_role)
             elif type(x) == dict:
-                results.append(Task(self,x,module_vars=task_vars,default_vars=default_vars,additional_conditions=additional_conditions))
+                results.append(Task(self,x,module_vars=task_vars,default_vars=default_vars,additional_conditions=additional_conditions,role_name=role_name))
             else:
                 raise Exception("unexpected task type")
 

@@ -158,6 +158,9 @@ def vv(msg, host=None):
 def vvv(msg, host=None):
     return verbose(msg, host=host, caplevel=2)
 
+def vvvv(msg, host=None):
+    return verbose(msg, host=host, caplevel=3)
+
 def verbose(msg, host=None, caplevel=2):
     if utils.VERBOSITY > caplevel:
         if host is None:
@@ -189,7 +192,7 @@ class AggregateStats(object):
 
         for (host, value) in runner_results.get('contacted', {}).iteritems():
             if not ignore_errors and (('failed' in value and bool(value['failed'])) or
-                ('rc' in value and value['rc'] != 0)):
+                ('failed_when_result' in value and [value['failed_when_result']] or ['rc' in value and value['rc'] != 0])[0]):
                 self._increment('failures', host)
             elif 'skipped' in value and bool(value['skipped']):
                 self._increment('skipped', host)

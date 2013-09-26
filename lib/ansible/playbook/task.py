@@ -25,11 +25,11 @@ class Task(object):
     __slots__ = [
         'name', 'meta', 'action', 'only_if', 'when', 'async_seconds', 'async_poll_interval',
         'notify', 'module_name', 'module_args', 'module_vars', 'default_vars',
-        'play', 'notified_by', 'tags', 'register',
+        'play', 'notified_by', 'tags', 'register', 'role_name',
         'delegate_to', 'first_available_file', 'ignore_errors',
         'local_action', 'transport', 'sudo', 'sudo_user', 'sudo_pass',
         'items_lookup_plugin', 'items_lookup_terms', 'environment', 'args',
-        'any_errors_fatal', 'changed_when', 'always_run'
+        'any_errors_fatal', 'changed_when', 'failed_when', 'always_run', 'delay', 'retries', 'until'
     ]
 
     # to prevent typos and such
@@ -38,10 +38,10 @@ class Task(object):
          'first_available_file', 'include', 'tags', 'register', 'ignore_errors',
          'delegate_to', 'local_action', 'transport', 'sudo', 'sudo_user',
          'sudo_pass', 'when', 'connection', 'environment', 'args',
-         'any_errors_fatal', 'changed_when', 'always_run'
+         'any_errors_fatal', 'changed_when', 'failed_when', 'always_run', 'delay', 'retries', 'until'
     ]
-
-    def __init__(self, play, ds, module_vars=None, default_vars=None, additional_conditions=None):
+    
+    def __init__(self, play, ds, module_vars=None, default_vars=None, additional_conditions=None, role_name=None):
         ''' constructor loads from a task or handler datastructure '''
 
         # meta directives are used to tell things like ansible/playbook to run
@@ -88,7 +88,7 @@ class Task(object):
                 else:
                     raise errors.AnsibleError("cannot find lookup plugin named %s for usage in with_%s" % (plugin_name, plugin_name))
 
-            elif x in [ 'changed_when', 'when']:
+            elif x in [ 'changed_when', 'failed_when', 'when']:
                 ds[x] = "jinja2_compare %s" % (ds[x])
             elif x.startswith("when_"):
                 if 'when' in ds:
@@ -110,6 +110,17 @@ class Task(object):
         self.register     = ds.get('register', None)
         self.sudo         = utils.boolean(ds.get('sudo', play.sudo))
         self.environment  = ds.get('environment', {})
+        self.role_name    = role_name
+        
+        #Code to allow do until feature in a Task 
+        if 'until' in ds:
+            if not ds.get('register'):
+                raise errors.AnsibleError("register keyword is mandatory when using do until feature")
+            self.module_vars['delay']     = ds.get('delay', 5)
+            self.module_vars['retries']   = ds.get('retries', 3)
+            self.module_vars['register']  = ds.get('register', None)
+            self.until                    = "jinja2_compare %s" % (ds.get('until'))
+            self.module_vars['until']     = utils.compile_when_to_only_if(self.until)
 
         # rather than simple key=value args on the options line, these represent structured data and the values
         # can be hashes and lists, not just scalars
@@ -167,6 +178,11 @@ class Task(object):
         if self.changed_when is not None:
             self.changed_when = utils.compile_when_to_only_if(self.changed_when)
 
+        self.failed_when = ds.get('failed_when', None)
+
+        if self.failed_when is not None:
+            self.failed_when = utils.compile_when_to_only_if(self.failed_when)
+
         self.async_seconds = int(ds.get('async', 0))  # not async by default
         self.async_poll_interval = int(ds.get('poll', 10))  # default poll = 10 seconds
         self.notify = ds.get('notify', [])
@@ -223,6 +239,7 @@ class Task(object):
         self.module_vars['ignore_errors'] = self.ignore_errors
         self.module_vars['register'] = self.register
         self.module_vars['changed_when'] = self.changed_when
+        self.module_vars['failed_when'] = self.failed_when
         self.module_vars['always_run'] = self.always_run
 
         # tags allow certain parts of a playbook to be run without running the whole playbook

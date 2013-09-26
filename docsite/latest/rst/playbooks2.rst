@@ -163,7 +163,7 @@ You can do this by using an external variables file, or files, just like this::
 
     ---
     - hosts: all
-      user: root
+      remote_user: root
       vars:
         favcolor: blue
       vars_files:
@@ -197,7 +197,7 @@ in a push-script::
 
     ---
     - hosts: all
-      user: root
+      remote_user: root
       vars:
         from: "camelot"
       vars_prompt:
@@ -276,7 +276,7 @@ This is useful, for, among other things, setting the hosts group or the user for
 Example::
 
     ---
-    - user: '{{ user }}'
+    - remote_user: '{{ user }}'
       hosts: '{{ hosts }}'
       tasks:
          - ...
@@ -421,7 +421,7 @@ but it is easily handled with a minimum of syntax in an Ansible Playbook::
 
     ---
     - hosts: all
-      user: root
+      remote_user: root
       vars_files:
         - "vars/common.yml"
         - [ "vars/{{ ansible_os_family }}.yml", "vars/os_defaults.yml" ]
@@ -460,6 +460,39 @@ Ansible's approach to configuration -- separating variables from tasks, keeps yo
 from turning into arbitrary code with ugly nested ifs, conditionals, and so on - and results
 in more streamlined & auditable configuration rules -- especially because there are a
 minimum of decision points to track.
+
+Do-Until
+````````
+
+Sometimes you would want to retry a task till a certain condition is met, In such conditions the Do/Until feature will help.
+Here's an example which show's the syntax to be applied for the task.::
+   
+    - action: shell /usr/bin/foo
+      register: result
+      until: register.stdout.find("all systems go") != -1
+      retries: 5
+      delay: 10
+
+The above example run the shell module recursively till the module's result has "all systems go" in it's stdout or the task has 
+been retried for 5 times with a delay of 10 seconds. The default value for "retries" is 3 and "delay" is 5.
+
+The task returns the results returned by the last task run. The results of individual retries can be viewed by -vv option.
+The results will have a new key "attempts" which will have the number of the retries for the task.
+
+.. Note::
+
+    The Do/Until does not take decision on whether to fail or pass the play when the maximum retries are completed, the user can
+    can do that in the next task as follows.
+   
+Example::
+    
+   - action: shell /usr/bin/foo
+     register: result
+     until: register.stdout.find("all systems go") != -1
+     retries: 5
+     delay: 10
+     failed_when: result.attempts == 5
+
 
 Loops
 `````
@@ -500,15 +533,15 @@ Nested Loops
 Loops can be nested as well::
 
     - name: give users access to multiple databases
-      mysql_user: name={{ item[0] }} priv={{ item[1] }}.*:*
+      mysql_user: name={{ item[0] }} priv={{ item[1] }}.*:ALL password=foo
       with_nested:
         - [ 'alice', 'bob', 'eve' ]
         - [ 'clientdb', 'employeedb', 'providerdb' ]
 
-As with the case of 'with_items' above, you can use previously defined variables. Just specify the variable'sname without templating it with '{{ }}'::
+As with the case of 'with_items' above, you can use previously defined variables. Just specify the variable's name without templating it with '{{ }}'::
 
     - name: here, 'users' contains the above list of employees
-      mysql_user: name={{ item[0] }} priv={{ item[1] }}.*:*
+      mysql_user: name={{ item[0] }} priv={{ item[1] }}.*:ALL password=foo
       with_nested:
         - users
         - [ 'clientdb', 'employeedb', 'providerdb' ]
@@ -665,7 +698,7 @@ updates through a proxy and access other packages not through a proxy.  Ansible 
 to configure your environment by using the 'environment' keyword.  Here is an example::
 
     - hosts: all
-      user: root
+      remote_user: root
 
       tasks:
 
@@ -676,7 +709,7 @@ to configure your environment by using the 'environment' keyword.  Here is an ex
 The environment can also be stored in a variable, and accessed like so::
 
     - hosts: all
-      user: root
+      remote_user: root
 
       # here we make a variable named "env" that is a dictionary
       vars:
@@ -751,7 +784,7 @@ poll value is 10 seconds if you do not specify a value for `poll`::
 
     ---
     - hosts: all
-      user: root
+      remote_user: root
       tasks:
       - name: simulate long running op (15 sec), wait for up to 45, poll every 5
         command: /bin/sleep 15
@@ -768,7 +801,7 @@ Alternatively, if you do not need to wait on the task to complete, you may
 
     ---
     - hosts: all
-      user: root
+      remote_user: root
       tasks:
       - name: simulate long running op, allow to run for 45, fire and forget
         command: /bin/sleep 15

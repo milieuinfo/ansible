@@ -254,7 +254,11 @@ def path_dwim_relative(original, dirname, source, playbook_base, check=True):
     # (used by roles code)
 
     basedir = os.path.dirname(original)
-    template2 = os.path.join(basedir, '..', dirname, source)
+    if os.path.islink(basedir):
+        basedir = unfrackpath(basedir)
+        template2 = os.path.join(basedir, dirname, source)
+    else:
+        template2 = os.path.join(basedir, '..', dirname, source)
     source2 = path_dwim(basedir, template2)
     if os.path.exists(source2):
         return source2
@@ -505,7 +509,7 @@ def base_parser(constants=C, usage="", output_opts=False, runas_opts=False,
 
     parser = SortedOptParser(usage, version=version("%prog"))
     parser.add_option('-v','--verbose', default=False, action="callback",
-        callback=increment_debug, help="verbose mode (-vvv for more)")
+        callback=increment_debug, help="verbose mode (-vvv for more, -vvvv to enable connection debugging)")
 
     parser.add_option('-f','--forks', dest='forks', default=constants.DEFAULT_FORKS, type='int',
         help="specify number of parallel processes to use (default=%s)" % constants.DEFAULT_FORKS)

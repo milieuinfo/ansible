@@ -48,12 +48,12 @@ author: James Cammarata
 '''
 
 EXAMPLES = '''
-# To use accelerate mode, simply add "accelerated: true" to your play. The initial
+# To use accelerate mode, simply add "accelerate: true" to your play. The initial
 # key exchange and starting up of the daemon will occur over SSH, but all commands and
 # subsequent actions will be conducted over the raw socket connection using AES encryption
 
 - hosts: devservers
-  accelerated: true
+  accelerate: true
   tasks:
       - command: /usr/bin/anything
 '''
@@ -347,7 +347,8 @@ def main():
             port=dict(required=False, default=5099),
             password=dict(required=True),
             minutes=dict(required=False, default=30),
-        )
+        ),
+        supports_check_mode=True
     )
 
     password  = base64.b64decode(module.params['password'])

@@ -51,7 +51,7 @@ For starters, here's a playbook that contains just one play::
       vars:
         http_port: 80
         max_clients: 200
-      user: root
+      remote_user: root
       tasks:
       - name: ensure apache is at the latest version
         yum: pkg=httpd state=latest
@@ -78,25 +78,28 @@ to target and what remote user to complete the steps (called tasks) as.
 
 The `hosts` line is a list of one or more groups or host patterns,
 separated by colons, as described in the :ref:`patterns`
-documentation.  The `user` is just the name of the user account::
+documentation.  The `remote_user` is just the name of the user account::
 
     ---
     - hosts: webservers
-      user: root
+      remote_user: root
 
+.. Note::
+
+    The `remote_user` parameter was formerly called just `user`. It was renamed in Ansible 1.4 to make it more distinguishable from the `user` module (used to create users on remote systems).
 
 Support for running things from sudo is also available::
 
     ---
     - hosts: webservers
-      user: yourname
+      remote_user: yourname
       sudo: yes
 
 You can also use sudo on a particular task instead of the whole play::
 
     ---
     - hosts: webservers
-      user: yourname
+      remote_user: yourname
       tasks:
         - service: name=nginx state=started
           sudo: yes
@@ -106,7 +109,7 @@ You can also login as you, and then sudo to different users than root::
 
     ---
     - hosts: webservers
-      user: yourname
+      remote_user: yourname
       sudo: yes
       sudo_user: postgres
 
@@ -134,7 +137,7 @@ The `vars` section contains a list of variables and values that can be used in t
 
     ---
     - hosts: webservers
-      user: root
+      remote_user: root
       vars:
          http_port: 80
          van_halen_port: 5150
@@ -387,7 +390,7 @@ which also supports structured variables::
 
       - include: wordpress.yml
         vars:
-            user: timmy
+            remote_user: timmy
             some_list_variable:
               - alpha
               - beta
@@ -424,7 +427,7 @@ For example::
 
     - name: this is a play at the top level of a file
       hosts: all
-      user: root
+      remote_user: root
       tasks:
       - name: say hi
         tags: foo
@@ -561,7 +564,7 @@ Role Default Variables
 
 .. versionadded:: 1.3
 
-Role default variables allow you to set default variables for included or dependedent roles (see below). To create
+Role default variables allow you to set default variables for included or dependent roles (see below). To create
 defaults, simply add a `defaults/main.yml` file in your role directory. These variables will have the lowest priority
 of any variables available, and can be easily overridden by any other variable, including inventory variables.
 

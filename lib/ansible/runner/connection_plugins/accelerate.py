@@ -23,6 +23,7 @@ import struct
 import time
 from ansible.callbacks import vvv
 from ansible.runner.connection_plugins.ssh import Connection as SSHConnection
+from ansible.runner.connection_plugins.paramiko_ssh import Connection as ParamikoConnection
 from ansible import utils
 from ansible import errors
 from ansible import constants
@@ -59,14 +60,24 @@ class Connection(object):
         elif not isinstance(self.accport, int):
             self.accport = int(self.accport)
 
-        self.ssh = SSHConnection(
-            runner=self.runner,
-            host=self.host, 
-            port=self.port, 
-            user=self.user, 
-            password=password, 
-            private_key_file=private_key_file
-        )
+        if self.runner.original_transport == "paramiko":
+            self.ssh = ParamikoConnection(
+                runner=self.runner,
+                host=self.host,
+                port=self.port,
+                user=self.user,
+                password=password,
+                private_key_file=private_key_file
+            )
+        else:
+            self.ssh = SSHConnection(
+                runner=self.runner,
+                host=self.host,
+                port=self.port,
+                user=self.user,
+                password=password,
+                private_key_file=private_key_file
+            )
 
         # attempt to work around shared-memory funness
         if getattr(self.runner, 'aes_keys', None):
@@ -75,7 +86,10 @@ class Connection(object):
     def _execute_accelerate_module(self):
         args = "password=%s port=%s" % (base64.b64encode(self.key.__str__()), str(self.accport))
         inject = dict(password=self.key)
-        inject = utils.combine_vars(inject, self.runner.inventory.get_variables(self.host))
+        if self.runner.accelerate_inventory_host:
+            inject = utils.combine_vars(inject, self.runner.inventory.get_variables(self.runner.accelerate_inventory_host))
+        else:
+            inject = utils.combine_vars(inject, self.runner.inventory.get_variables(self.host))
         self.ssh.connect()
         tmp_path = self.runner._make_tmp_path(self.ssh)
         return self.runner._execute_module(self.ssh, tmp_path, 'accelerate', args, inject=inject)
@@ -141,7 +155,7 @@ class Connection(object):
         if executable == "":
             executable = constants.DEFAULT_EXECUTABLE
 
-        if self.runner.sudo or sudoable and sudo_user:
+        if self.runner.sudo and sudoable and sudo_user:
             cmd, prompt = utils.make_sudo_cmd(sudo_user, executable, cmd)
 
         vvv("EXEC COMMAND %s" % cmd)

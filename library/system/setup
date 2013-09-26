@@ -115,7 +115,8 @@ class Facts(object):
                     '/etc/openwrt_release': 'OpenWrt',
                     '/etc/system-release': 'OtherLinux',
                     '/etc/alpine-release': 'Alpine',
-                    '/etc/release': 'Solaris' }
+                    '/etc/release': 'Solaris',
+                    '/etc/arch-release': 'Archlinux' }
     SELINUX_MODE_DICT = { 1: 'enforcing', 0: 'permissive', -1: 'disabled' }
 
     # A list of dicts.  If there is a platform with more than one
@@ -146,6 +147,7 @@ class Facts(object):
         self.get_date_time_facts()
         self.get_user_facts()
         self.get_local_facts()
+        self.get_env_facts()
 
     def populate(self):
         return self.facts
@@ -268,6 +270,15 @@ class Facts(object):
             self.facts['distribution'] = 'FreeBSD'
             self.facts['distribution_release'] = platform.release()
             self.facts['distribution_version'] = platform.version()
+        elif self.facts['system'] == 'OpenBSD':
+            self.facts['distribution'] = 'OpenBSD'
+            self.facts['distribution_release'] = platform.release()
+            rc, out, err = module.run_command("/sbin/sysctl -n kern.version")
+            match = re.match('OpenBSD\s[0-9]+.[0-9]+-(\S+)\s.*', out)
+            if match:
+                self.facts['distribution_version'] = match.groups()[0]
+            else:
+                self.facts['distribution_version'] = 'release'
         else:
             dist = platform.dist()
             self.facts['distribution'] = dist[0].capitalize() or 'NA'
@@ -447,6 +458,10 @@ class Facts(object):
     def get_user_facts(self):
         self.facts['user_id'] = getpass.getuser()
 
+    def get_env_facts(self):
+        self.facts['env'] = {}
+        for k,v in os.environ.iteritems():
+            self.facts['env'][k] = v
 
 class Hardware(Facts):
     """
@@ -614,7 +629,8 @@ class LinuxHardware(Hardware):
                 if dmi_bin is not None:
                     (rc, out, err) = module.run_command('%s -s %s' % (dmi_bin, v))
                     if rc == 0:
-                        self.facts[k] = out.rstrip()
+                        # Strip out commented lines (specific dmidecode output)
+                        self.facts[k] = ''.join([ line for line in out.split('\n') if not line.startswith('#') ])
                     else:
                         self.facts[k] = 'NA'
                 else:
@@ -1888,6 +1904,13 @@ class LinuxVirtual(Virtual):
             else:
                 self.facts['virtualization_role'] = 'guest'
             return
+
+        if os.path.exists('/proc/1/cgroup'):
+            for line in open('/proc/1/cgroup').readlines():
+                if re.search('/lxc/', line):
+                    self.facts['virtualization_type'] = 'lxc'
+                    self.facts['virtualization_role'] = 'guest'
+                    return
 
         product_name = get_file_content('/sys/devices/virtual/dmi/id/product_name')
 
