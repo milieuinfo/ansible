@@ -74,7 +74,7 @@ def get_cowsay_info():
 cowsay, noncow = get_cowsay_info()
 
 def log_lockfile():
-    tempdir = tempfile.gettempdir() 
+    tempdir = tempfile.gettempdir()
     uid = os.getuid()
     path = os.path.join(tempdir, ".ansible-lock.%s" % uid)
     return path
@@ -93,7 +93,7 @@ def log_flock(runner):
             fcntl.lockf(LOG_LOCK, fcntl.LOCK_EX)
         except OSError:
             pass
-        
+
 
 def log_unflock(runner):
     if runner is not None:
@@ -341,7 +341,7 @@ class DefaultRunnerCallbacks(object):
         call_callback_module('runner_on_async_failed', host, res, jid)
 
     def on_file_diff(self, host, diff):
-        call_callback_module('runner_on_file_diff', diff)
+        call_callback_module('runner_on_file_diff', host, diff)
 
 ########################################################################
 
@@ -471,7 +471,7 @@ class PlaybookRunnerCallbacks(DefaultRunnerCallbacks):
         super(PlaybookRunnerCallbacks, self).on_failed(host, results, ignore_errors=ignore_errors)
 
     def on_ok(self, host, host_result):
-        
+
         item = host_result.get('item', None)
 
         host_result2 = host_result.copy()
@@ -519,13 +519,14 @@ class PlaybookRunnerCallbacks(DefaultRunnerCallbacks):
         super(PlaybookRunnerCallbacks, self).on_error(host, err)
 
     def on_skipped(self, host, item=None):
-        msg = ''
-        if item:
-            msg = "skipping: [%s] => (item=%s)" % (host, item)
-        else:
-            msg = "skipping: [%s]" % host
-        display(msg, color='cyan', runner=self.runner)
-        super(PlaybookRunnerCallbacks, self).on_skipped(host, item)
+        if constants.DISPLAY_SKIPPED_HOSTS:
+            msg = ''
+            if item:
+                msg = "skipping: [%s] => (item=%s)" % (host, item)
+            else:
+                msg = "skipping: [%s]" % host
+            display(msg, color='cyan', runner=self.runner)
+            super(PlaybookRunnerCallbacks, self).on_skipped(host, item)
 
     def on_no_hosts(self):
         display("FATAL: no hosts matched or all hosts have already failed -- aborting\n", color='red', runner=self.runner)
@@ -581,7 +582,7 @@ class PlaybookCallbacks(object):
         msg = "TASK: [%s]" % name
         if is_conditional:
             msg = "NOTIFIED: [%s]" % name
-        
+
         if hasattr(self, 'start_at'):
             if name == self.start_at or fnmatch.fnmatch(name, self.start_at):
                 # we found out match, we can get rid of this now

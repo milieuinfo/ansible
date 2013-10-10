@@ -20,8 +20,8 @@
 import fnmatch
 import os
 import re
-
 import subprocess
+
 import ansible.constants as C
 from ansible.inventory.ini import InventoryParser
 from ansible.inventory.script import InventoryScript
@@ -38,7 +38,7 @@ class Inventory(object):
 
     __slots__ = [ 'host_list', 'groups', '_restriction', '_also_restriction', '_subset', 
                   'parser', '_vars_per_host', '_vars_per_group', '_hosts_cache', '_groups_list',
-                  '_vars_plugins', '_playbook_basedir']
+                  '_pattern_hosts', '_vars_plugins', '_playbook_basedir']
 
     def __init__(self, host_list=C.DEFAULT_HOST_LIST):
 
@@ -53,6 +53,7 @@ class Inventory(object):
         self._vars_per_group = {}
         self._hosts_cache    = {}
         self._groups_list    = {} 
+        self._pattern_hosts  = {}
 
         # to be set by calling set_playbook_basedir by ansible-playbook
         self._playbook_basedir = None
@@ -132,7 +133,11 @@ class Inventory(object):
         # exclude hosts not in a subset, if defined
         if self._subset:
             subset = self._get_hosts(self._subset)
-            hosts.intersection_update(subset)
+            new_hosts = []
+            for h in hosts:
+                if h in subset and h not in new_hosts:
+                    new_hosts.append(h)
+            hosts = new_hosts
 
         # exclude hosts mentioned in any restriction (ex: failed hosts)
         if self._restriction is not None:
@@ -140,7 +145,7 @@ class Inventory(object):
         if self._also_restriction is not None:
             hosts = [ h for h in hosts if h.name in self._also_restriction ]
 
-        return sorted(hosts, key=lambda x: x.name)
+        return hosts
 
     def _get_hosts(self, patterns):
         """
@@ -169,17 +174,19 @@ class Inventory(object):
         # first, then the &s, then the !s.
         patterns = pattern_regular + pattern_intersection + pattern_exclude
 
-        hosts = set()
+        hosts = []
+
         for p in patterns:
+            that = self.__get_hosts(p)
             if p.startswith("!"):
-                # Discard excluded hosts
-                hosts.difference_update(self.__get_hosts(p))
+                hosts = [ h for h in hosts if h not in that ]
             elif p.startswith("&"):
-                # Only leave the intersected hosts
-                hosts.intersection_update(self.__get_hosts(p))
+                hosts = [ h for h in hosts if h in that ]
             else:
-                # Get all hosts from both patterns
-                hosts.update(self.__get_hosts(p))
+                for h in that:
+                    if h not in hosts:
+                        hosts.append(h)
+
         return hosts
 
     def __get_hosts(self, pattern):
@@ -190,9 +197,7 @@ class Inventory(object):
 
         (name, enumeration_details) = self._enumeration_info(pattern)
         hpat = self._hosts_in_unenumerated_pattern(name)
-        hpat = sorted(hpat, key=lambda x: x.name)
-
-        return set(self._apply_ranges(pattern, hpat))
+        return self._apply_ranges(pattern, hpat)
 
     def _enumeration_info(self, pattern):
         """
@@ -205,8 +210,17 @@ class Inventory(object):
             return (pattern, None)
         (first, rest) = pattern.split("[")
         rest = rest.replace("]","")
+        try:
+            # support selectors like webservers[0]
+            x = int(rest)
+            return (first, (x,x)) 
+        except:
+            pass
         if "-" in rest:
             (left, right) = rest.split("-",1)
+            return (first, (left, right))
+        elif ":" in rest:
+            (left, right) = rest.split(":",1)
             return (first, (left, right))
         else:
             return (first, (rest, rest))
@@ -222,30 +236,35 @@ class Inventory(object):
             return hosts
 
         (left, right) = limits
-        enumerated = enumerate(hosts)
+
         if left == '':
             left = 0
         if right == '':
             right = 0
         left=int(left)
         right=int(right)
-        enumerated = [ h for (i,h) in enumerated if i>=left and i<=right ]
-        return enumerated
+        if left != right:
+            return hosts[left:right]
+        else:
+            return [ hosts[left] ]
 
-    # TODO: cache this logic so if called a second time the result is not recalculated
     def _hosts_in_unenumerated_pattern(self, pattern):
         """ Get all host names matching the pattern """
 
-        hosts = {}
+        hosts = []
         # ignore any negative checks here, this is handled elsewhere
         pattern = pattern.replace("!","").replace("&", "")
 
-        groups = self.get_groups()
-        for group in groups:
-            for host in group.get_hosts():
-                if pattern == 'all' or self._match(group.name, pattern) or self._match(host.name, pattern):
-                    hosts[host.name] = host
-        return sorted(hosts.values(), key=lambda x: x.name)
+        if pattern not in self._pattern_hosts:
+            results = []
+            groups = self.get_groups()
+            for group in groups:
+                for host in group.get_hosts():
+                    if pattern == 'all' or self._match(group.name, pattern) or self._match(host.name, pattern):
+                        if host not in results:
+                            results.append(host)
+            self._pattern_hosts[pattern] = results
+        return self._pattern_hosts[pattern]
 
     def groups_for_host(self, host):
         results = []

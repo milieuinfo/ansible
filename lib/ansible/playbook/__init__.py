@@ -348,7 +348,7 @@ class PlayBook(object):
         ansible.callbacks.set_task(self.runner_callbacks, task)
 
         if task.role_name:
-            name = '%s|%s' % (task.role_name, task.name)
+            name = '%s | %s' % (task.role_name, task.name)
         else:
             name = task.name
 
@@ -454,7 +454,7 @@ class PlayBook(object):
             setup_cache=self.SETUP_CACHE, callbacks=self.runner_callbacks, sudo=play.sudo, sudo_user=play.sudo_user,
             transport=play.transport, sudo_pass=self.sudo_pass, is_playbook=True, module_vars=play.vars,
             default_vars=play.default_vars, check=self.check, diff=self.diff, 
-            accelerate=play.accelerate, accelerate_port=play.accelerate_port
+            accelerate=play.accelerate, accelerate_port=play.accelerate_port,
         ).run()
         self.stats.compute(setup_results, setup=True)
 
@@ -538,10 +538,14 @@ class PlayBook(object):
                     # here a meta task is a placeholder that signals handlers should be run
 
                     if task.meta == 'flush_handlers':
+                        fired_names = {}
                         for handler in play.handlers():
                             if len(handler.notified_by) > 0:
                                 self.inventory.restrict_to(handler.notified_by)
-                                self._run_task(play, handler, True)
+                                if handler.name not in fired_names:
+                                    self._run_task(play, handler, True)
+                                # prevent duplicate handler includes from running more than once
+                                fired_names[handler.name] = 1
                                 self.inventory.lift_restriction()
                                 new_list = handler.notified_by[:]
                                 for host in handler.notified_by:

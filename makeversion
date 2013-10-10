@@ -1,0 +1,9 @@
+#!/bin/bash
+
+oldv=$(cat VERSION)
+[ -z $1 ] && read -p "New version ($oldv): " version || version=$1
+[ -z $version ] && version=$oldv
+dch --force-save-on-release --changelog packaging/debian/changelog --newversion $version
+echo $version > VERSION
+sed -i -e "s/__version__.*/__version__ = '$version'/" lib/ansible/__init__.py
+

@@ -36,7 +36,11 @@ class ActionModule(object):
             # in check mode, always skip this module
             return ReturnData(conn=conn, comm_ok=True, result=dict(skipped=True, msg='check mode not supported for this module'))
 
-        tokens  = shlex.split(module_args)
+        # Decode the result of shlex.split() to UTF8 to get around a bug in that's been fixed in Python 2.7 but not Python 2.6.
+        # See: http://bugs.python.org/issue6988
+        tokens  = shlex.split(module_args.encode('utf8'))
+        tokens = [s.decode('utf8') for s in tokens]
+
         source  = tokens[0]
         # FIXME: error handling
         args    = " ".join(tokens[1:])
@@ -70,5 +74,7 @@ class ActionModule(object):
         # clean up after
         if tmp.find("tmp") != -1 and not C.DEFAULT_KEEP_REMOTE_FILES:
             self.runner._low_level_exec_command(conn, 'rm -rf %s >/dev/null 2>&1' % tmp, tmp)
+
+        result.result['changed'] = True
 
         return result

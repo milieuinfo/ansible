@@ -1,21 +1,24 @@
 Best Practices
 ==============
 
-Here are some tips for making the most of Ansible.
+Here are some tips for making the most of Ansible playbooks.
 
-You can find some example playbooks illustrating these best practices in our `ansible-examples repository <https://github.com/ansible/ansible-examples>`_.  (NOTE: These may not use all of the features in the latest release just yet).
+You can find some example playbooks illustrating these best practices in our `ansible-examples repository <https://github.com/ansible/ansible-examples>`_.  (NOTE: These may not use all of the features in the latest release, but are still an excellent reference!).
 
 .. contents::
    :depth: 2
 
+.. _content_organization:
+
 Content Organization
 ++++++++++++++++++++++
 
-The following section shows one of many possible ways to organize content.   Your usage of Ansible should fit your needs,
-so feel free to modify this approach and organize as you see fit.
+The following section shows one of many possible ways to organize playbook content. Your usage of Ansible should fit your needs, however, not ours, so feel free to modify this approach and organize as you see fit.
 
 (One thing you will definitely want to do though, is use the "roles" organization feature, which is documented as part
-of the main playbooks page)
+of the main playbooks page.  See :doc:`playbooks_roles`).
+
+.. _directory_layout:
 
 Directory Layout
 ````````````````
@@ -54,11 +57,14 @@ The top level of the directory would contain files and directories like so::
         monitoring/           # ""
         fooapp/               # "" 
 
+.. _stage_vs_prod:
+
 How to Arrange Inventory, Stage vs Production
 `````````````````````````````````````````````
 
-In this example, the *production* file contains the inventory of all of your production hosts.  Of course you can pull inventory from an external
-data source as well, but this is just a basic example.  Define groups based on purpose of the host (roles) and also geography or datacenter location::
+In the example below, the *production* file contains the inventory of all of your production hosts.  Of course you can pull inventory from an external data source as well, but this is just a basic example.  
+
+It is suggested that you define groups based on purpose of the host (roles) and also geography or datacenter location (if applicable)::
 
     # file: production
 
@@ -97,19 +103,20 @@ data source as well, but this is just a basic example.  Define groups based on p
     boston-webservers
     boston-dbservers
 
+
+.. _groups_and_hosts:
+
 Group And Host Variables
 ````````````````````````
 
-Now, groups are nice for organization, but that's not all groups are good for.  You can also assign variables to them!  For instance, atlanta
-has its own NTP servers, so when setting up ntp.conf, we should use them.  Let's set those now::
+Now, groups are nice for organization, but that's not all groups are good for.  You can also assign variables to them!  For instance, atlanta has its own NTP servers, so when setting up ntp.conf, we should use them.  Let's set those now::
 
     ---
     # file: group_vars/atlanta
     ntp: ntp-atlanta.example.com
     backup: backup-atlanta.example.com
 
-Variables aren't just for geographic information either!  Maybe the webservers have some configuration that doesn't make sense for the database
-servers::
+Variables aren't just for geographic information either!  Maybe the webservers have some configuration that doesn't make sense for the database servers::
 
     ---
     # file: group_vars/webservers
@@ -130,15 +137,7 @@ We can define specific hardware variance in systems in a host_vars file, but avo
     foo_agent_port: 86
     bar_agent_port: 99
 
-Role Variables
-``````````````
-
-Variables that are associated with a given role can be defined in a main.yml file within the "vars" directory for that role. These variables are accessible not only to the role itself, but to all other roles and tasks that are part of the same playbook.::
-
-    ---
-    # file: roles/python/vars/main.yml
-    python_version: "2.7.5"
-    pip_version: "1.3.1"
+.. _split_by_role:
 
 Top Level Playbooks Are Separated By Role
 `````````````````````````````````````````
@@ -159,6 +158,8 @@ In a file like webservers.yml (also at the top level), we simply map the configu
       roles:
         - common
         - webtier
+
+.. _role_organization:
 
 Task And Handler Organization For A Role
 ````````````````````````````````````````
@@ -190,10 +191,15 @@ of each play::
     - name: restart ntpd
       service: name=ntpd state=restarted
 
+See :doc:`playbooks_roles` for more information.
+
+
+.. _organization_examples:
+
 What This Organization Enables (Examples)
 `````````````````````````````````````````
 
-So that's our basic organizational structure.
+Above we've shared our basic organizational structure.
 
 Now what sort of use cases does this layout enable?  Lots!  If I want to reconfigure my whole infrastructure, it's just::
 
@@ -229,15 +235,22 @@ And there are some useful commands to know (at least in 1.1 and higher)::
     # confirm what hostnames might be communicated with if I said "limit to boston"
     ansible-playbook -i production webservers.yml --limit boston --list-hosts
 
+.. _dep_vs_config:
+
 Deployment vs Configuration Organization
 ````````````````````````````````````````
 
-The above setup models a typical OS configuration topology.  When doing multi-tier deployments, there are going
+The above setup models a typical configuration topology.  When doing multi-tier deployments, there are going
 to be some additional playbooks that hop between tiers to roll out an application.  In this case, 'site.yml'
 may be augmented by playbooks like 'deploy_exampledotcom.yml' but the general concepts can still apply.
 
+Consider "playbooks" as a sports metaphor -- you don't have to just have one set of plays to use against your infrastructure
+all the time -- you can have situational plays that you use at different times and for different purposes.
+
 Ansible allows you to deploy and configure using the same tool, so you would likely reuse groups and just
 keep the OS configuration in separate playbooks from the app deployment.
+
+.. _stage_vs_production:
 
 Stage vs Production
 +++++++++++++++++++
@@ -247,11 +260,17 @@ As also mentioned above, a good way to keep your stage (or testing) and producti
 Testing things in a stage environment before trying in production is always a great idea.  Your environments need not be the same
 size and you can use group variables to control the differences between those environments.
 
+.. _rolling_update:
+
 Rolling Updates
 +++++++++++++++
 
 Understand the 'serial' keyword.  If updating a webserver farm you really want to use it to control how many machines you are
 updating at once in the batch.
+
+See :doc:`playbooks_delegation`.
+
+.. _mention_the_state:
 
 Always Mention The State
 ++++++++++++++++++++++++
@@ -259,14 +278,20 @@ Always Mention The State
 The 'state' parameter is optional to a lot of modules.  Whether 'state=present' or 'state=absent', it's always best to leave that
 parameter in your playbooks to make it clear, especially as some modules support additional states.
 
+.. _group_by_roles:
+
 Group By Roles
 ++++++++++++++
 
-A system can be in multiple groups.  See :doc:`patterns`.   Having groups named after things like
+A system can be in multiple groups.  See :doc:`intro_inventory` and :doc:`intro_patterns`.   Having groups named after things like
 *webservers* and *dbservers* is repeated in the examples because it's a very powerful concept.
 
 This allows playbooks to target machines based on role, as well as to assign role specific variables
 using the group variable system.
+
+See :doc:`playbooks_roles`.
+
+.. _os_variance:
 
 Operating System and Distribution Variance
 ++++++++++++++++++++++++++++++++++++++++++
@@ -303,6 +328,7 @@ If group-specific settings are needed, this can also be done. For example::
 
 In the above example, CentOS machines get the value of '42' for asdf, but other machines get '10'.
 
+.. _ship_modules_with_playbooks:
 
 Bundling Ansible Modules With Playbooks
 +++++++++++++++++++++++++++++++++++++++
@@ -312,16 +338,22 @@ Bundling Ansible Modules With Playbooks
 If a playbook has a "./library" directory relative to its YAML file, this directory can be used to add ansible modules that will
 automatically be in the ansible module path.  This is a great way to keep modules that go with a playbook together.
 
+.. _whitespace:
+
 Whitespace and Comments
 +++++++++++++++++++++++
 
 Generous use of whitespace to break things up, and use of comments (which start with '#'), is encouraged.
+
+.. _name_tasks:
 
 Always Name Tasks
 +++++++++++++++++
 
 It is possible to leave off the 'name' for a given task, though it is recommended to provide a description 
 about why something is being done instead.  This name is shown when the playbook is run.
+
+.. _keep_it_simple:
 
 Keep It Simple
 ++++++++++++++
@@ -331,6 +363,8 @@ to use every feature of Ansible together, all at once.  Use what works
 for you.  For example, you will probably not need 'vars',
 'vars_files', 'vars_prompt' and '--extra-vars' all at once,
 while also using an external inventory file.
+
+.. _version_control:
 
 Version Control
 +++++++++++++++
@@ -348,9 +382,9 @@ changed the rules that are automating your infrastructure.
        Review the basic playbook features
    :doc:`modules`
        Learn about available modules
-   :doc:`moduledev`
+   :doc:`developing_modules`
        Learn how to extend Ansible by writing your own modules
-   :doc:`patterns`
+   :doc:`intro_patterns`
        Learn about how to select hosts
    `Github examples directory <https://github.com/ansible/ansible/tree/devel/examples/playbooks>`_
        Complete playbook files from the github project source

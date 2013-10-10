@@ -1,22 +1,30 @@
-Module Development
+Developing Modules
 ==================
 
 Ansible modules are reusable units of magic that can be used by the Ansible API,
 or by the `ansible` or `ansible-playbook` programs.
 
+See :doc:`modules` for a list of various ones developed in core.
+
 Modules can be written in any language and are found in the path specified
 by `ANSIBLE_LIBRARY` or the ``--module-path`` command line option.
+
+Should you develop an interesting Ansible module, consider sending a pull request to the
+`github project <http://github.com/ansible/ansible>`_ to see about getting your module
+included in the core project.
 
 .. contents::
    :depth: 2
 
+.. _module_dev_tutorial:
 
 Tutorial
 ````````
-Let's build a module to get and set the system time.  For starters, let's build
+
+Let's build a very-basic module to get and set the system time.  For starters, let's build
 a module that just outputs the current time.
 
-We are going to use Python here but any language is possible.  Only File I/O and outputing to standard
+We are going to use Python here but any language is possible.  Only File I/O and outputting to standard
 out are required.  So, bash, C++, clojure, Python, Ruby, whatever you want
 is fine.
 
@@ -45,6 +53,8 @@ Ok, let's get going with an example.  We'll use Python.  For starters, save this
         "time" : date
     })
 
+.. _module_testing:
+
 Testing Modules
 ```````````````
 
@@ -62,6 +72,8 @@ You should see output that looks something like this::
     {u'time': u'2012-03-14 22:13:48.539183'}
 
 If you did not, you might have a typo in your module, so recheck it and try again.
+
+.. _reading_input:
 
 Reading Input
 `````````````
@@ -176,6 +188,8 @@ This should return something like::
 
     {"changed": true, "time": "2012-03-14 12:23:00.000307"}
 
+.. _module_provided_facts:
+
 Module Provided 'Facts'
 ```````````````````````
 
@@ -199,6 +213,8 @@ These 'facts' will be available to all statements called after that module (but 
 A good idea might be make a module called 'site_facts' and always call it at the top of each playbook, though
 we're always open to improving the selection of core facts in Ansible as well.
 
+.. _common_module_boilerplate:
+
 Common Module Boilerplate
 `````````````````````````
 
@@ -208,7 +224,7 @@ only shorter in terms of code, they are actually FASTER in terms of execution ti
 
 Rather than mention these here, the best way to learn is to read some of the `source of the modules <https://github.com/ansible/ansible/tree/devel/library>`_ that come with Ansible.
 
-The 'group' and 'user' modules are reasonably non-trival and showcase what this looks like.
+The 'group' and 'user' modules are reasonably non-trivial and showcase what this looks like.
 
 Key parts include always ending the module file with::
 
@@ -248,6 +264,8 @@ can function outside of Ansible.
 If submitting a module to ansible's core code, which we encourage, use of the AnsibleModule
 class is required.
 
+.. _developing_for_check_mode:
+
 Check Mode
 ``````````
 .. versionadded:: 1.1
@@ -274,6 +292,8 @@ system state is altered when the user enables check mode.
 If your module does not support check mode, when the user runs Ansible in check
 mode, your module will simply be skipped.
 
+.. _module_dev_pitfalls:
+
 Common Pitfalls
 ```````````````
 
@@ -294,6 +314,8 @@ will still be shown in Ansible, but the command will not succeed.
 
 Always use the hacking/test-module script when developing modules and it will warn
 you about these kind of things.
+
+.. _module_dev_conventions:
 
 Conventions/Recommendations
 ```````````````````````````
@@ -319,7 +341,9 @@ and guidelines:
 
 * Return codes from modules are not actually not signficant, but continue on with 0=success and non-zero=failure for reasons of future proofing.
 
-* As results from many hosts will be aggregrated at once, modules should return only relevant output.  Returning the entire contents of a log file is generally bad form.
+* As results from many hosts will be aggregated at once, modules should return only relevant output.  Returning the entire contents of a log file is generally bad form.
+
+.. _module_dev_shorthand:
 
 Shorthand Vs JSON
 `````````````````
@@ -334,6 +358,7 @@ will know what to do::
 If you're writing a module in Python or Ruby or whatever, though, returning
 JSON is probably the simplest way to go.
 
+.. _module_documenting:
 
 Documenting Your Module
 ```````````````````````
@@ -343,6 +368,8 @@ All modules included in the CORE distribution must have a
 which conforms to the schema defined below. You may find it easier to
 start writing your ``DOCUMENTATION`` string in an editor with YAML
 syntax highlighting before you include it in your Python file.
+
+.. _module_doc_example:
 
 Example
 +++++++
@@ -384,6 +411,8 @@ The ``module_formatter.py`` script and ``ansible-doc(1)`` append the
 ``EXAMPLES`` blob after any existing (deprecated) ``examples`` you may have in the
 YAML ``DOCUMENTATION`` string.
 
+.. _module_dev_testing:
+
 Building & Testing
 ++++++++++++++++++
 
@@ -418,6 +447,8 @@ output formats available:
     You can use ANSIBLE_KEEP_REMOTE_FILES=1 to prevent ansible from
     deleting the remote files so you can debug your module.
 
+.. _module_contribution:
+
 Getting Your Module Into Core
 `````````````````````````````
 
@@ -425,17 +456,22 @@ High-quality modules with minimal dependencies
 can be included in the core, but core modules (just due to the programming
 preferences of the developers) will need to be implemented in Python and use
 the AnsibleModule common code, and should generally use consistent arguments with the rest of
-the program.   Stop by the mailing list to inquire about requirements.
+the program.   Stop by the mailing list to inquire about requirements if you like, and submit
+a github pull request to the main project.
 
 .. seealso::
 
    :doc:`modules`
        Learn about available modules
-   :doc:`contrib`
-       User contributed playbooks, modules, and articles
+   :doc:`developing_plugins`
+       Learn about developing plugins
+   :doc:`developing_api`
+       Learn about the Python API for playbook and task execution
    `Github modules directory <https://github.com/ansible/ansible/tree/devel/library>`_
        Browse source of core modules
-   `Mailing List <http://groups.google.com/group/ansible-project>`_
-       Questions? Help? Ideas?  Stop by the list on Google Groups
+   `Mailing List <http://groups.google.com/group/ansible-devel>`_
+       Development mailing list
    `irc.freenode.net <http://irc.freenode.net>`_
        #ansible IRC chat channel
+
+

@@ -1,3 +1,9 @@
+ansible (1.4.0-acd0-20131010) UNRELEASED; urgency=low
+
+  * update to current devel
+
+ -- Serge van Ginderachter <serge@vanginderachter.be>  Thu, 10 Oct 2013 18:30:03 +0200
+
 ansible (1.4.0-acd0-20130926) unstable; urgency=low
 
   * update to devel 1.4
