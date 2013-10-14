@@ -21,6 +21,7 @@ from ansible.utils.template import template
 from ansible import utils
 from ansible import errors
 from ansible.playbook.task import Task
+import ansible.constants as C
 import pipes
 import shlex
 import os
@@ -148,16 +149,27 @@ class Play(object):
             role_vars = orig_path
             orig_path = role_name
 
-        path = utils.path_dwim(self.basedir, os.path.join('roles', orig_path))
-        if not os.path.isdir(path) and not orig_path.startswith(".") and not orig_path.startswith("/"):
-            path2 = utils.path_dwim(self.basedir, orig_path)
-            if not os.path.isdir(path2):
-                raise errors.AnsibleError("cannot find role in %s or %s" % (path, path2))
-            path = path2
-        elif not os.path.isdir(path):
-            raise errors.AnsibleError("cannot find role in %s" % (path))
+        role_path = None
 
-        return (path, role_vars)
+        possible_paths = [
+            utils.path_dwim(self.basedir, os.path.join('roles', orig_path)),
+            utils.path_dwim(self.basedir, orig_path)
+        ]
+
+        if C.DEFAULT_ROLES_PATH:
+            search_locations = C.DEFAULT_ROLES_PATH.split(os.pathsep)
+            for loc in search_locations:
+                possible_paths.append(utils.path_dwim(loc, orig_path))
+
+        for path_option in possible_paths:
+            if os.path.isdir(path_option):
+                role_path = path_option
+                break
+
+        if role_path is None:
+            raise errors.AnsibleError("cannot find role in %s" % " or ".join(possible_paths))
+
+        return (role_path, role_vars)
 
     def _build_role_dependencies(self, roles, dep_stack, passed_vars={}, level=0):
         # this number is arbitrary, but it seems sane
@@ -389,15 +401,29 @@ class Play(object):
 
     # *************************************************
 
-    def _load_tasks(self, tasks, vars={}, default_vars={}, sudo_vars={}, additional_conditions=[], original_file=None, role_name=None):
+    def _load_tasks(self, tasks, vars=None, default_vars=None, sudo_vars=None, additional_conditions=None, original_file=None, role_name=None):
         ''' handle task and handler include statements '''
 
         results = []
         if tasks is None:
             # support empty handler files, and the like.
             tasks = []
+        if additional_conditions is None:
+            additional_conditions = []
+        if vars is None:
+            vars = {}
+        if default_vars is None:
+            default_vars = {}
+        if sudo_vars is None:
+            sudo_vars = {}
+
+        old_conditions = list(additional_conditions)
 
         for x in tasks:
+
+            # prevent assigning the same conditions to each task on an include
+            included_additional_conditions = list(old_conditions)
+
             if not isinstance(x, dict):
                 raise errors.AnsibleError("expecting dict; got: %s" % x)
 
@@ -427,7 +453,7 @@ class Play(object):
                 include_vars = {}
                 for k in x:
                     if k.startswith("with_"):
-                        sys.stderr.write("DEPRECATION: include + with_items is unsupported/undocumented and will be removed in Ansible 1.5, it will likely not do what you think it does.\n")
+                        utils.deprecated("include + with_items is an unsupported feature and has been undocumented for many releases because of this", "1.5")
                         plugin_name = k[5:]
                         if plugin_name not in utils.plugins.lookup_loader:
                             raise errors.AnsibleError("cannot find lookup plugin named %s for usage in with_%s" % (plugin_name, plugin_name))
@@ -478,9 +504,11 @@ class Play(object):
                         for x in data:
                             if 'include' in x:
                                 x['role_name'] = new_role
-                    results += self._load_tasks(data, mv, default_vars, included_sudo_vars, included_additional_conditions, original_file=include_filename, role_name=new_role)
+                    loaded = self._load_tasks(data, mv, default_vars, included_sudo_vars, list(included_additional_conditions), original_file=include_filename, role_name=new_role)
+                    results += loaded
             elif type(x) == dict:
-                results.append(Task(self,x,module_vars=task_vars,default_vars=default_vars,additional_conditions=additional_conditions,role_name=role_name))
+                task = Task(self,x,module_vars=task_vars,default_vars=default_vars,additional_conditions=list(additional_conditions),role_name=role_name)
+                results.append(task)
             else:
                 raise Exception("unexpected task type")
 

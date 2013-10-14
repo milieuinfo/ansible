@@ -27,6 +27,7 @@ from ansible import errors
 from ansible import __version__
 from ansible.utils.plugins import *
 from ansible.utils import template
+from ansible.callbacks import display
 import ansible.constants as C
 import time
 import StringIO
@@ -39,8 +40,14 @@ import difflib
 import warnings
 import traceback
 import getpass
+import sys
+import textwrap
 
 VERBOSITY=0
+
+# list of all deprecation messages to prevent duplicate display
+deprecations = {}
+warnings = {}
 
 MAX_FILE_SIZE_FOR_DIFF=1*1024*1024
 
@@ -158,6 +165,7 @@ def is_changed(result):
 
 def check_conditional(conditional, basedir, inject, fail_on_undefined=False, jinja2=False):
 
+
     if jinja2:
         conditional = "jinja2_compare %s" % conditional
 
@@ -167,6 +175,7 @@ def check_conditional(conditional, basedir, inject, fail_on_undefined=False, jin
         if conditional in inject and str(inject[conditional]).find('-') == -1:
             conditional = inject[conditional]
         conditional = template.template(basedir, conditional, inject, fail_on_undefined=fail_on_undefined)
+        original = str(conditional).replace("jinja2_compare ","")
         # a Jinja2 evaluation that results in something Python can eval!
         presented = "{%% if %s %%} True {%% else %%} False {%% endif %%}" % conditional
         conditional = template.template(basedir, presented, inject)
@@ -181,13 +190,13 @@ def check_conditional(conditional, basedir, inject, fail_on_undefined=False, jin
             elif conditional.find("is defined") != -1:
                 return False
             else:
-                raise errors.AnsibleError("error while evaluating conditional: %s" % conditional)
+                raise errors.AnsibleError("error while evaluating conditional: %s" % original)
         elif val == "True":
             return True
         elif val == "False":
             return False
         else:
-            raise errors.AnsibleError("unable to evaluate conditional: %s" % conditional)
+            raise errors.AnsibleError("unable to evaluate conditional: %s" % original)
 
     if not isinstance(conditional, basestring):
         return conditional
@@ -338,6 +347,7 @@ def parse_yaml(data):
 
 def process_common_errors(msg, probline, column):
     replaced = probline.replace(" ","")
+
     if replaced.find(":{{") != -1 and replaced.find("}}") != -1:
         msg = msg + """
 This one looks easy to fix.  YAML thought it was looking for the start of a 
@@ -354,28 +364,79 @@ It should be written as:
 
     app_path: "{{ base_path }}/foo"
 """
+        return msg
 
-    elif len(probline) and probline[column] == ":" and probline.find("=") != -1:
+    elif len(probline) and len(probline) >= column and probline[column] == ":" and probline.count(':') > 1:
         msg = msg + """
-This one looks easy to fix.  There is an extra unquoted colon in the line 
+This one looks easy to fix.  There seems to be an extra unquoted colon in the line 
 and this is confusing the parser. It was only expecting to find one free 
 colon. The solution is just add some quotes around the colon, or quote the 
 entire line after the first colon.
 
 For instance, if the original line was:
 
-    copy: src=file dest=/path/filename:with_colon.txt
+    copy: src=file.txt dest=/path/filename:with_colon.txt
 
 It can be written as:
 
-    copy: src=file dest='/path/filename:with_colon.txt'
+    copy: src=file.txt dest='/path/filename:with_colon.txt'
 
 Or:
     
-    copy: 'src=file dest=/path/filename:with_colon.txt'
+    copy: 'src=file.txt dest=/path/filename:with_colon.txt'
 
 
 """
+        return msg
+    else:
+        parts = probline.split(":")
+        print parts
+        if len(parts) > 1:
+            middle = parts[1].strip()
+            match = False
+            unbalanced = False
+            if middle.startswith("'") and not middle.endswith("'"):
+                match = True
+            elif middle.startswith('"') and not middle.endswith('"'):
+                match = True
+            if middle[0] in [ '"', "'" ] and middle[-1] in [ '"', "'" ]:
+                unbalanced = True
+
+            if match:
+                msg = msg + """
+This one looks easy to fix.  It seems that there is a value started 
+with a quote, and the YAML parser is expecting to see the line ended 
+with the same kind of quote.  For instance:
+
+    when: "ok" in result.stdout
+
+Could be written as:
+
+   when: '"ok" in result.stdout'
+
+or equivalently:
+
+   when: "'ok' in result.stdout"
+
+"""
+                return msg
+
+            if unbalanced:
+                msg = msg + """
+We could be wrong, but this one looks like it might be an issue with 
+unbalanced quotes.  If starting a value with a quote, make sure the 
+line ends with the same set of quotes.  For instance this arbitrary 
+example:
+
+    foo: "bad" "wolf"
+
+Could be written as:
+
+    foo: '"bad" "wolf"'
+
+"""
+                return msg
+
     return msg
 
 def process_yaml_error(exc, data, path=None):
@@ -898,7 +959,29 @@ def listify_lookup_plugin_terms(terms, basedir, inject):
 
     return terms
 
+def deprecated(msg, version):
+    ''' used to print out a deprecation message.'''
+    if not C.DEPRECATION_WARNINGS:
+        return
+    new_msg = "\n[DEPRECATION WARNING]: %s. This feature will be removed in version %s." % (msg, version)
+    new_msg = new_msg + " Deprecation warnings can be disabled by setting deprecation_warnings=False in ansible.cfg.\n\n"
+    wrapped = textwrap.wrap(new_msg, 79)
+    new_msg = "\n".join(wrapped) + "\n"
+
+    if new_msg not in deprecations:
+        display(new_msg, color='purple', stderr=True)
+        deprecations[new_msg] = 1
+
+def warning(msg):
+    new_msg = "\n[WARNING]: %s" % msg
+    wrapped = textwrap.wrap(new_msg, 79)
+    new_msg = "\n".join(wrapped) + "\n"
+    if new_msg not in warnings:
+        display(new_msg, color='bright purple', stderr=True)
+        warnings[new_msg] = 1
+
 def combine_vars(a, b):
+
     if C.DEFAULT_HASH_BEHAVIOUR == "merge":
         return merge_hash(a, b)
     else:

@@ -1,5 +1,5 @@
-# (c) 2012-2013, Michael DeHaan <michael.dehaan@gmail.com>
-#
+# (C) 2013, Michael Scherer, <misc@zarb.org>
+
 # This file is part of Ansible
 #
 # Ansible is free software: you can redistribute it and/or modify
@@ -14,5 +14,14 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
-__version__ = '1.4.0-acd0-20131014'
-__author__ = 'Michael DeHaan'
+
+import os
+
+
+class CallbackModule(object):
+    def playbook_on_play_start(self, foo):
+        if os.path.exists('/tmp/ansible_test_disable'):
+            self.disabled = True
+
+    def playbook_on_stats(self, stats):
+            open('/tmp/ansible_test_finish', 'w').close()
