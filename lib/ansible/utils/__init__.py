@@ -23,12 +23,6 @@ import yaml
 import copy
 import optparse
 import operator
-from ansible import errors
-from ansible import __version__
-from ansible.utils.plugins import *
-from ansible.utils import template
-from ansible.callbacks import display
-import ansible.constants as C
 import time
 import StringIO
 import stat
@@ -43,11 +37,20 @@ import getpass
 import sys
 import textwrap
 
+# ansible
+from ansible import errors
+from ansible import __version__
+from ansible.utils.plugins import *
+from ansible.utils import template
+from ansible.callbacks import display
+import ansible.constants as C
+import filesystem
+
 VERBOSITY=0
 
 # list of all deprecation messages to prevent duplicate display
 deprecations = {}
-warnings = {}
+warns = {}
 
 MAX_FILE_SIZE_FOR_DIFF=1*1024*1024
 
@@ -224,7 +227,7 @@ def unfrackpath(path):
     example:
     '$HOME/../../var/mail' becomes '/var/spool/mail'
     '''
-    return os.path.normpath(os.path.realpath(os.path.expandvars(os.path.expanduser(path))))
+    return filesystem.unfrackpath(path)
 
 def prepare_writeable_dir(tree,mode=0777):
     ''' make sure a directory exists and is writeable '''
@@ -250,33 +253,11 @@ def path_dwim(basedir, given):
     '''
     make relative paths work like folks expect.
     '''
-
-    if given.startswith("/"):
-        return os.path.abspath(given)
-    elif given.startswith("~"):
-        return os.path.abspath(os.path.expanduser(given))
-    else:
-        return os.path.abspath(os.path.join(basedir, given))
+    return filesystem.path_dwim(basedir, given)
 
 def path_dwim_relative(original, dirname, source, playbook_base, check=True):
     ''' find one file in a directory one level up in a dir named dirname relative to current '''
-    # (used by roles code)
-
-    basedir = os.path.dirname(original)
-    if os.path.islink(basedir):
-        basedir = unfrackpath(basedir)
-        template2 = os.path.join(basedir, dirname, source)
-    else:
-        template2 = os.path.join(basedir, '..', dirname, source)
-    source2 = path_dwim(basedir, template2)
-    if os.path.exists(source2):
-        return source2
-    obvious_local_path = path_dwim(playbook_base, source)
-    if os.path.exists(obvious_local_path):
-        return obvious_local_path
-    if check:
-        raise errors.AnsibleError("input file not found at %s or %s" % (source2, obvious_local_path))
-    return source2 # which does not exist
+    return filesystem.path_dwim_relative(original, dirname, source, playbook_base, check=True)
 
 def json_loads(data):
     ''' parse a JSON string and return a data structure '''
@@ -390,7 +371,6 @@ Or:
         return msg
     else:
         parts = probline.split(":")
-        print parts
         if len(parts) > 1:
             middle = parts[1].strip()
             match = False
@@ -399,9 +379,8 @@ Or:
                 match = True
             elif middle.startswith('"') and not middle.endswith('"'):
                 match = True
-            if middle[0] in [ '"', "'" ] and middle[-1] in [ '"', "'" ]:
+            if middle[0] in [ '"', "'" ] and middle[-1] in [ '"', "'" ] and probline.count("'") > 2 or probline.count("'") > 2:
                 unbalanced = True
-
             if match:
                 msg = msg + """
 This one looks easy to fix.  It seems that there is a value started 
@@ -896,15 +875,19 @@ def is_list_of_strings(items):
             return False
     return True
 
-def safe_eval(str):
+def safe_eval(str, locals=None, include_exceptions=False, template_call=False):
     '''
     this is intended for allowing things like:
-    with_items: {{ a_list_variable }}
+    with_items: a_list_variable
     where Jinja2 would return a string
     but we do not want to allow it to call functions (outside of Jinja2, where
     the env is constrained)
     '''
     # FIXME: is there a more native way to do this?
+
+    if template_call:
+        # for the debug module in Ansible, allow debug of the form foo.bar.baz versus Python dictionary form
+        str = template.template(None, "{{ %s }}" % str, locals)
 
     def is_set(var):
         return not var.startswith("$") and not '{{' in var
@@ -922,8 +905,18 @@ def safe_eval(str):
     if re.search(r'import \w+', str):
         return str
     try:
-        return eval(str)
+        result = None
+        if not locals:
+            result = eval(str)
+        else:
+            result = eval(str, None, locals)
+        if include_exceptions:
+            return (result, None)
+        else:
+            return result
     except Exception, e:
+        if include_exceptions:
+            return (str, e)
         return str
 
 
@@ -976,9 +969,9 @@ def warning(msg):
     new_msg = "\n[WARNING]: %s" % msg
     wrapped = textwrap.wrap(new_msg, 79)
     new_msg = "\n".join(wrapped) + "\n"
-    if new_msg not in warnings:
+    if new_msg not in warns:
         display(new_msg, color='bright purple', stderr=True)
-        warnings[new_msg] = 1
+        warns[new_msg] = 1
 
 def combine_vars(a, b):
 

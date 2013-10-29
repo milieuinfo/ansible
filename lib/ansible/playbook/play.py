@@ -74,6 +74,8 @@ class Play(object):
         # We first load the vars files from the datastructure
         # so we have the default variables to pass into the roles
         self.vars_files = ds.get('vars_files', [])
+        if not isinstance(self.vars_files, list):
+            raise errors.AnsibleError('vars_files must be a list')
         self._update_vars_files_for_host(None)
 
         # now we load the roles into the datastructure
@@ -83,6 +85,8 @@ class Play(object):
         # and finally re-process the vars files as they may have
         # been updated by the included roles
         self.vars_files = ds.get('vars_files', [])
+        if not isinstance(self.vars_files, list):
+            raise errors.AnsibleError('vars_files must be a list')
         self._update_vars_files_for_host(None)
 
         # template everything to be efficient, but do not pre-mature template
@@ -119,6 +123,7 @@ class Play(object):
         self.max_fail_pct     = int(ds.get('max_fail_percentage', 100))
 
         load_vars = {}
+        load_vars['playbook_dir'] = self.basedir
         if self.playbook.inventory.basedir() is not None:
             load_vars['inventory_dir'] = self.playbook.inventory.basedir()
 
@@ -264,7 +269,7 @@ class Play(object):
                 new_default_vars = utils.parse_yaml_from_file(filename)
                 if new_default_vars:
                     if type(new_default_vars) != dict:
-                        raise errors.AnsibleError("%s must be stored as dictonary/hash: %s" % (filename, type(new_default_vars)))
+                        raise errors.AnsibleError("%s must be stored as dictionary/hash: %s" % (filename, type(new_default_vars)))
 
                     default_vars = utils.combine_vars(default_vars, new_default_vars)
 
@@ -322,8 +327,8 @@ class Play(object):
             library   = utils.path_dwim(self.basedir, os.path.join(role_path, 'library'))
 
             missing = lambda f: not os.path.isfile(f)
-            if missing(task) and missing(handler) and missing(vars_file) and missing(meta_file) and missing(library):
-                raise errors.AnsibleError("found role at %s, but cannot find %s or %s or %s or %s or %s" % (role_path, task, handler, vars_file, meta_file, library))
+            if missing(task) and missing(handler) and missing(vars_file) and missing(defaults_file) and missing(meta_file) and missing(library):
+                raise errors.AnsibleError("found role at %s, but cannot find %s or %s or %s or %s or %s or %s" % (role_path, task, handler, vars_file, defaults_file, meta_file, library))
 
             if isinstance(role, dict):
                 role_name = role['role']

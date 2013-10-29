@@ -40,6 +40,7 @@ from ansible.utils import template
 from ansible.utils import check_conditional
 from ansible import errors
 from ansible import module_common
+from ansible.module_common import ModuleReplacer
 import poller
 import connection
 from return_data import ReturnData
@@ -51,6 +52,7 @@ try:
 except ImportError:
     HAS_ATFORK=False
 
+module_replacer = ModuleReplacer(strip_comments=False)
 multiprocessing_runner = None
         
 OUTPUT_LOCKFILE  = tempfile.TemporaryFile()
@@ -71,11 +73,6 @@ def _executor_hook(job_queue, result_queue, new_stdin):
             host = job_queue.get(block=False)
             return_data = multiprocessing_runner._executor(host, new_stdin)
             result_queue.put(return_data)
-
-            if 'LEGACY_TEMPLATE_WARNING' in return_data.flags:
-                # pass data back up across the multiprocessing fork boundary
-                template.Flags.LEGACY_TEMPLATE_WARNING = True
-
         except Queue.Empty:
             pass
         except:
@@ -320,6 +317,11 @@ class Runner(object):
             else:
                 argsfile = self._transfer_str(conn, tmp, 'arguments', args)
 
+            if self.sudo and self.sudo_user != 'root':
+                # deal with possible umask issues once sudo'ed to other user
+                cmd_args_chmod = "chmod a+r %s" % argsfile
+                self._low_level_exec_command(conn, cmd_args_chmod, tmp, sudoable=False)
+
             if async_jid is None:
                 cmd = "%s %s" % (remote_module_path, argsfile)
             else:
@@ -366,15 +368,6 @@ class Runner(object):
     def _executor(self, host, new_stdin):
         ''' handler for multiprocessing library '''
 
-        def get_flags():
-            # flags are a way of passing arbitrary event information
-            # back up the chain, since multiprocessing forks and doesn't
-            # allow state exchange
-            flags = []
-            if template.Flags.LEGACY_TEMPLATE_WARNING:
-                flags.append('LEGACY_TEMPLATE_WARNING')
-            return flags
-
         try:
             if not new_stdin:
                 self._new_stdin = os.fdopen(os.dup(sys.stdin.fileno()))
@@ -384,7 +377,6 @@ class Runner(object):
             exec_rc = self._executor_internal(host, new_stdin)
             if type(exec_rc) != ReturnData:
                 raise Exception("unexpected return type: %s" % type(exec_rc))
-            exec_rc.flags = get_flags()
             # redundant, right?
             if not exec_rc.comm_ok:
                 self.callbacks.on_unreachable(host, exec_rc.result)
@@ -392,11 +384,11 @@ class Runner(object):
         except errors.AnsibleError, ae:
             msg = str(ae)
             self.callbacks.on_unreachable(host, msg)
-            return ReturnData(host=host, comm_ok=False, result=dict(failed=True, msg=msg), flags=get_flags())
+            return ReturnData(host=host, comm_ok=False, result=dict(failed=True, msg=msg))
         except Exception:
             msg = traceback.format_exc()
             self.callbacks.on_unreachable(host, msg)
-            return ReturnData(host=host, comm_ok=False, result=dict(failed=True, msg=msg), flags=get_flags())
+            return ReturnData(host=host, comm_ok=False, result=dict(failed=True, msg=msg))
 
     # *****************************************************
 
@@ -425,6 +417,7 @@ class Runner(object):
         inject['vars']        = self.module_vars
         inject['defaults']    = self.default_vars
         inject['environment'] = self.environment
+        inject['playbook_dir'] = self.basedir
 
         if self.inventory.basedir() is not None:
             inject['inventory_dir'] = self.inventory.basedir()
@@ -451,10 +444,12 @@ class Runner(object):
             if type(items) != list:
                 raise errors.AnsibleError("lookup plugins have to return a list: %r" % items)
 
+            # hack for apt, yum, and pkgng so that with_items maps back into a single module call
             if len(items) and utils.is_list_of_strings(items) and self.module_name in [ 'apt', 'yum', 'pkgng' ]:
-                # hack for apt, yum, and pkgng so that with_items maps back into a single module call
-                inject['item'] = ",".join(items)
-                items = None
+                # only join the item/package names if this task is not conditional
+                if not self.conditional:
+                    inject['item'] = ",".join(items)
+                    items = None
 
         # logic to replace complex args if possible
         complex_args = self.complex_args
@@ -660,7 +655,7 @@ class Runner(object):
         result = handler.run(conn, tmp, module_name, module_args, inject, complex_args)
         # Code for do until feature
         until = self.module_vars.get('until', None)
-        if until is not None and result.comm_ok and "failed" not in result.result:
+        if until is not None and result.comm_ok:
             inject[self.module_vars.get('register')] = result.result
             cond = template.template(self.basedir, until, inject, expand_lists=False)
             if not utils.check_conditional(cond,  self.basedir, inject, fail_on_undefined=self.error_on_undefined_vars):
@@ -674,8 +669,6 @@ class Runner(object):
                     result = handler.run(conn, tmp, module_name, module_args, inject, complex_args)
                     result.result['attempts'] = x
                     vv("Result from run %i is: %s" % (x, result.result))
-                    if "failed" in result.result:
-                        break
                     inject[self.module_vars.get('register')] = result.result
                     cond = template.template(self.basedir, until, inject, expand_lists=False)
                     if utils.check_conditional(cond, self.basedir, inject, fail_on_undefined=self.error_on_undefined_vars):
@@ -832,60 +825,19 @@ class Runner(object):
     def _copy_module(self, conn, tmp, module_name, module_args, inject, complex_args=None):
         ''' transfer a module over SFTP, does not run it '''
 
-        # FIXME if complex args is none, set to {}
-
-        if module_name.startswith("/"):
-            raise errors.AnsibleFileNotFound("%s is not a module" % module_name)
-
         # Search module path(s) for named module.
         in_path = utils.plugins.module_finder.find_plugin(module_name)
         if in_path is None:
             raise errors.AnsibleFileNotFound("module %s not found in %s" % (module_name, utils.plugins.module_finder.print_paths()))
-
         out_path = os.path.join(tmp, module_name)
 
-        module_data = ""
-        module_style = 'old'
+        # insert shared code and arguments into the module
+        (module_data, module_style, shebang) = module_replacer.modify_module(
+            in_path, complex_args, module_args, inject
+        )
 
-        with open(in_path) as f:
-            module_data = f.read()
-            if module_common.REPLACER in module_data:
-                module_style = 'new'
-            if 'WANT_JSON' in module_data:
-                module_style = 'non_native_want_json'
-
-            complex_args_json = utils.jsonify(complex_args)
-            # We force conversion of module_args to str because module_common calls shlex.split,
-            # a standard library function that incorrectly handles Unicode input before Python 2.7.3.
-            encoded_args = repr(module_args.encode('utf-8'))
-            encoded_lang = repr(C.DEFAULT_MODULE_LANG)
-            encoded_complex = repr(complex_args_json)
-
-            module_data = module_data.replace(module_common.REPLACER, module_common.MODULE_COMMON)
-            module_data = module_data.replace(module_common.REPLACER_ARGS, encoded_args)
-            module_data = module_data.replace(module_common.REPLACER_LANG, encoded_lang)
-            module_data = module_data.replace(module_common.REPLACER_COMPLEX, encoded_complex)
-
-            if module_style == 'new':
-                facility = C.DEFAULT_SYSLOG_FACILITY
-                if 'ansible_syslog_facility' in inject:
-                    facility = inject['ansible_syslog_facility']
-                module_data = module_data.replace('syslog.LOG_USER', "syslog.%s" % facility)
-
-        lines = module_data.split("\n")
-        shebang = None
-        if lines[0].startswith("#!"):
-            shebang = lines[0].strip()
-            args = shlex.split(str(shebang[2:]))
-            interpreter = args[0]
-            interpreter_config = 'ansible_%s_interpreter' % os.path.basename(interpreter)
-
-            if interpreter_config in inject:
-                lines[0] = shebang = "#!%s %s" % (inject[interpreter_config], " ".join(args[1:]))
-                module_data = "\n".join(lines)
-
+        # ship the module
         self._transfer_str(conn, tmp, module_name, module_data)
-
         return (out_path, module_style, shebang)
 
     # *****************************************************

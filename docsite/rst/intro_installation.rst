@@ -86,6 +86,11 @@ On the managed nodes, you only need Python 2.4 or later, but if you are are runn
    Unix systems.  If you need to bootstrap these remote systems by installing Python 2.X, 
    using the 'raw' module will be able to do it remotely.
 
+.. _installing_the_control_machine:
+
+Installing the Control Machine
+``````````````````````````````
+
 .. _from_source:
 
 Running From Source
@@ -181,7 +186,7 @@ Debian/Ubuntu packages can also be built from the source checkout, run:
 
 .. code-block:: bash
 
-    $ make debian
+    $ make deb
 
 You may also wish to run from source to get the latest, which is covered above.
 

@@ -19,11 +19,15 @@ Misc changes:
 * The roles search path is now configurable in ansible.cfg.  'roles_path' in the config setting.
 * Includes with parameters can now be done like roles for consistency:  - { include: song.yml, year:1984, song:'jump' }
 * The name of each role is now shown before each task if roles are being used
+* Adds a "var=" option to the debug module for debugging variable data.  "debug: var=hostvars['hostname']" and "debug: var=foo" are all valid syntax.
+* Variables in {{ format }} can fully reference each other and preserve types, template engine is 2x as fast.
 
 New modules and plugins:
 
 * cloud:ec2_eip -- manage AWS elastic IPs
 * cloud:rax_clb -- manage Rackspace cloud load balancers
+* cloud:ovirt -- VM lifecycle controls for ovirt
+* files: acl -- set or get acls on a file
 * system: firewalld -- manage the firewalld configuration
 * system: host -- manage `/etc/hosts` file entries
 * system: modprobe -- manage kernel modules on systems that support modprobe/rmmod
@@ -59,6 +63,8 @@ Misc changes:
 * Added 'append_privs' option to the mysql_user module
 * Can now update (temporarily change) host variables using the "add_host" module for existing hosts.
 * Fixes for IPv6 addresses in inventory text files
+* name of executable can be passed to pip/gem etc, for installing under *different* interpreters
+* copy of ./hacking/env-setup added for fish users, ./hacking/env-setup.fish
 
 1.3.3 "Top of the World" (reprise) - October 9, 2013
 

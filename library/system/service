@@ -272,7 +272,7 @@ class Service(object):
         if self.state and self.running is None:
             self.module.fail_json(msg="failed determining service state, possible typo of service name?")
         # Find out if state has changed
-        if not self.running and self.state in ["started", "running"]:
+        if not self.running and self.state in ["started", "running", "reloaded"]:
             self.svc_change = True
         elif self.running and self.state in ["stopped","reloaded"]:
             self.svc_change = True
@@ -287,6 +287,8 @@ class Service(object):
         if self.svc_change:
             # Control service
             if self.state in ['started', 'running']:
+                self.action = "start"
+            elif not self.running and self.state == 'reloaded':
                 self.action = "start"
             elif self.state == 'stopped':
                 self.action = "stop"
@@ -793,8 +795,17 @@ class FreeBsdService(Service):
             self.module.fail_json(msg="unable to determine rcvar")
 
         # In rare cases, i.e. sendmail, rcvar can return several key=value pairs
-        # Usually there is just one, however.
-        self.rcconf_key = rcvars[0].split('=')[0]
+        # Usually there is just one, however.  In other rare cases, i.e. uwsgi,
+        # rcvar can return extra uncommented data that is not at all related to
+        # the rcvar.  We will just take the first key=value pair we come across
+        # and hope for the best.
+        for rcvar in rcvars:
+            if '=' in rcvar:
+                self.rcconf_key = rcvar.split('=')[0]
+                break
+
+        if self.rcconf_key is None:
+            self.module.fail_json(msg="unable to determine rcvar")
 
         return self.service_enable_rcconf()
 
@@ -880,7 +891,7 @@ class NetBsdService(Service):
             if os.path.isfile(rcfile):
                 self.rcconf_file = rcfile
 
-        self.rcconf_key = "%s" % string.replace(self.name,"-","_");
+        self.rcconf_key = "%s" % string.replace(self.name,"-","_")
 
         return self.service_enable_rcconf()
 
@@ -1194,7 +1205,11 @@ def main():
 
     module.exit_json(**result)
 
-# this is magic, see lib/ansible/module_common.py
-#<<INCLUDE_ANSIBLE_MODULE_COMMON>>
+### boilerplate: import common module snippets here
+from ansible.module_utils.basic import *
 
+### invoke the module
 main()
+
+
+

@@ -138,6 +138,7 @@ class PlayBook(object):
         self.basedir     = os.path.dirname(playbook) or '.'
         utils.plugins.push_basedir(self.basedir)
         vars = extra_vars.copy()
+        vars['playbook_dir'] = self.basedir
         if self.inventory.basedir() is not None:
             vars['inventory_dir'] = self.inventory.basedir()
 
@@ -305,7 +306,7 @@ class PlayBook(object):
             pattern=task.play.hosts, inventory=self.inventory, module_name=task.module_name,
             module_args=task.module_args, forks=self.forks,
             remote_pass=self.remote_pass, module_path=self.module_path,
-            timeout=self.timeout, remote_user=task.play.remote_user,
+            timeout=self.timeout, remote_user=task.remote_user,
             remote_port=task.play.remote_port, module_vars=task.module_vars,
             default_vars=task.default_vars, private_key_file=self.private_key_file,
             setup_cache=self.SETUP_CACHE, basedir=task.play.basedir,
@@ -352,7 +353,7 @@ class PlayBook(object):
         else:
             name = task.name
 
-        self.callbacks.on_task_start(template(play.basedir, name, task.module_vars, lookup_fatal=False, filter_fatal=False), is_handler)
+        self.callbacks.on_task_start(template(play.basedir, name, task.module_vars, lookup_fatal=False, filter_fatal=False, lookups=False), is_handler)
         if hasattr(self.callbacks, 'skip_task') and self.callbacks.skip_task:
             ansible.callbacks.set_task(self.callbacks, None)
             ansible.callbacks.set_task(self.runner_callbacks, None)

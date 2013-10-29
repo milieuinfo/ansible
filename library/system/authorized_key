@@ -65,12 +65,6 @@ options:
     required: false
     default: null
     version_added: "1.4"
-  unique:
-    description:
-      - Ensure that there is only one key matching the specified key in the file
-    required: false
-    default: false
-    version_added: "1.4"
 description:
     - "Adds or removes authorized keys for particular user accounts"
 author: Brad Olson
@@ -185,6 +179,9 @@ def parseoptions(options):
     if options:
         options_list = options.strip().split(",")
         for option in options_list:
+            # happen when there is comma at the end
+            if option == '':
+                continue
             if option.find("=") != -1:
                 (arg,val) = option.split("=", 1)
             else:
@@ -199,38 +196,61 @@ def parsekey(raw_key):
     of ssh-key options at the beginning
     '''
 
-    key_parts = shlex.split(raw_key)
-    if len(key_parts) == 4:
-        # this line contains options
-        (options,type,key,comment) = key_parts
-    elif len(key_parts) == 3:
-        # this line is just 'type key user@host'
-        (type,key,comment) = key_parts
-        options = None
-    else:
-        # invalid key, maybe a comment?
-        return None
+    VALID_SSH2_KEY_TYPES = [
+        'ecdsa-sha2-nistp256',
+        'ecdsa-sha2-nistp384',
+        'ecdsa-sha2-nistp521', 
+        'ssh-dss',
+        'ssh-rsa',
+    ]
 
-    if options:
+    options    = None   # connection options
+    key        = None   # encrypted key string
+    key_type   = None   # type of ssh key
+    type_index = None   # index of keytype in key string|list
+
+    key_parts = shlex.split(raw_key)
+    for i in range(0, len(key_parts)):
+        if key_parts[i] in VALID_SSH2_KEY_TYPES:
+            type_index = i
+            key_type = key_parts[i]
+            break
+
+    # check for options
+    if type_index is None:
+        return None
+    elif type_index == 1:
         # parse the options and store them
-        options = parseoptions(options)
-    return (key, type, options, comment)
+        options = key_parts[0]
+
+    # parse the options (if any)
+    options = parseoptions(options)
+
+    # get key after the type index
+    key = key_parts[(type_index + 1)]
+
+    # set comment to everything after the key
+    if len(key_parts) > (type_index + 1):
+        comment = " ".join(key_parts[(type_index + 2):])
+
+    return (key, key_type, options, comment)
 
 def readkeys(filename):
 
     if not os.path.isfile(filename):
-        return []
+        return {}
 
-    keys = []
+    keys = {}
     f = open(filename)
     for line in f.readlines():
         key_data = parsekey(line)
         if key_data:
-            keys.append(key_data)
+            # use key as identifier
+            keys[key_data[0]] = key_data
         else:
             # for an invalid line, just append the line
             # to the array so it will be re-output later
-            keys.append(line)
+            keys[line] = line
     f.close()
     return keys
 
@@ -239,16 +259,20 @@ def writekeys(module, filename, keys):
     fd, tmp_path = tempfile.mkstemp('', 'tmp', os.path.dirname(filename))
     f = open(tmp_path,"w")
     try:
-        for key in keys:
+        for index, key in keys.items():
             try:
                 (keyhash,type,options,comment) = key
                 option_str = ""
                 if options:
-                    for option_key in options.keys():
+                    option_strings = []
+                    for option_key in sorted(options.keys()):
                         if options[option_key]:
-                            option_str += "%s=%s " % (option_key, options[option_key])
+                            option_strings.append("%s=\"%s\"" % (option_key, options[option_key]))
                         else:
-                            option_str += "%s " % option_key
+                            option_strings.append("%s" % option_key)
+
+                    option_str = ",".join(option_strings)
+                    option_str += " "
                 key_line = "%s%s %s %s\n" % (option_str, type, keyhash, comment)
             except:
                 key_line = key
@@ -269,7 +293,6 @@ def enforce_state(module, params):
     manage_dir  = params.get("manage_dir", True)
     state       = params.get("state", "present")
     key_options = params.get("key_options", None)
-    unique      = params.get("unique",False)
 
     key = key.split('\n')
 
@@ -290,39 +313,36 @@ def enforce_state(module, params):
         present = False
         matched = False
         non_matching_keys = []
-        for existing_key in existing_keys:
-            # skip bad entries or bad input
-            if len(parsed_new_key) == 0 or len(existing_key) == 0:
-                continue
-            # the first element in the array after parsing
-            # is the actual key hash, which we check first
-            if parsed_new_key[0] == existing_key[0]:
-                present = True
-                # Then we check if everything matches, including
-                # the key type and options. If not, we append this
-                # existing key to the non-matching list
-                if parsed_new_key != existing_key:
-                    non_matching_keys.append(existing_key)
-                else:
-                    matched = True
+
+        if parsed_new_key[0] in existing_keys:
+            present = True
+            # Then we check if everything matches, including
+            # the key type and options. If not, we append this
+            # existing key to the non-matching list
+            # We only want it to match everything when the state
+            # is present
+            if parsed_new_key != existing_keys[parsed_new_key[0]] and state == "present":
+                non_matching_keys.append(existing_keys[parsed_new_key[0]])
+            else:
+                matched = True
+
 
         # handle idempotent state=present
         if state=="present":
-            if unique and len(non_matching_keys) > 0:
+            if len(non_matching_keys) > 0:
                 for non_matching_key in non_matching_keys:
-                    existing_keys.remove(non_matching_key)
-                do_write = True
+                    if non_matching_key[0] in existing_keys:
+                        del existing_keys[non_matching_key[0]]
+                        do_write = True
 
             if not matched:
-                existing_keys.append(parsed_new_key)
+                existing_keys[parsed_new_key[0]] = parsed_new_key
                 do_write = True
 
         elif state=="absent":
-            # currently, we only remove keys when 
-            # they are an exact match
             if not matched:
                 continue
-            existing_keys.remove(parsed_new_key)
+            del existing_keys[parsed_new_key[0]]
             do_write = True
 
     if do_write:

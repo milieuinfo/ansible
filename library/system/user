@@ -92,7 +92,8 @@ options:
         choices: [ "yes", "no" ]
         description:
             - Unless set to C(no), a home directory will be made for the user
-              when the account is created.
+              when the account is created or if the home directory does not
+              exist. 
     system:
         required: false
         default: "no"
@@ -563,6 +564,32 @@ class User(object):
         # by default we use the modify_user_usermod method
         return self.modify_user_usermod()
 
+    def create_homedir(self, path):
+        if not os.path.exists(path):
+            # use /etc/skel if possible
+            if os.path.exists('/etc/skel'):
+                try:
+                    shutil.copytree('/etc/skel', path, symlinks=True)
+                except OSError, e:
+                    self.module.exit_json(failed=True, msg="%s" % e)
+        else:
+            try:
+                os.makedirs(path)
+            except OSError, e:
+                self.module.exit_json(failed=True, msg="%s" % e)
+
+    def chown_homedir(self, uid, gid, path):
+        try:
+            os.chown(path, uid, gid)
+            for root, dirs, files in os.walk(path):
+                for d in dirs:
+                    os.chown(path, uid, gid)
+                for f in files:
+                    os.chown(os.path.join(root, f), uid, gid)
+        except OSError, e:
+            self.module.exit_json(failed=True, msg="%s" % e)
+           
+
 # ===========================================
 
 class FreeBsdUser(User):
@@ -718,7 +745,7 @@ class FreeBsdUser(User):
                 cmd.append('-G')
                 new_groups = groups
                 if self.append:
-                    new_groups.extend(current_groups)
+                    new_groups = groups | set(current_groups)
                 cmd.append(','.join(new_groups))
 
         # modify the user if cmd will do anything
@@ -1485,6 +1512,15 @@ def main():
             result['ssh_key_file'] = user.get_ssh_key_path()
             result['ssh_public_key'] = user.get_ssh_public_key()
 
+        # handle missing homedirs
+        info = user.user_info()
+        if user.home is None:
+            user.home = info[5]
+        if not os.path.exists(user.home) and user.createhome:
+            if not module.check_mode:
+                user.create_homedir(user.home)
+                user.chown_homedir(info[2], info[3], user.home)
+            result['changed'] = True
 
     module.exit_json(**result)
 
