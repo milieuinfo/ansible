@@ -1,4 +1,3 @@
-
 Ansible Documentation
 =====================
 
@@ -19,7 +18,7 @@ upgrade remote daemons or the problem of not being able to manage systems becaus
 
 You may be interested in reading about `some notable Ansible users <http://www.ansibleworks.com/users/>`_.
 
-This documentation covers the current released version of Ansible (1.3.X) and also some development version features (1.4).  For recent features, in each section, the version of Ansible where the feature is added is indicated.  AnsibleWorks releases a new major release of Ansible approximately every 2 months.  The core application evolves somewhat conservatively, valuing simplicity in language design and setup, while the community around new modules and plugins being developed and contributed moves very very quickly, typically adding 20 or so new modules in each release.
+This documentation covers the current released version of Ansible (1.4.X) and also some development version features (1.5).  For recent features, in each section, the version of Ansible where the feature is added is indicated.  AnsibleWorks releases a new major release of Ansible approximately every 2 months.  The core application evolves somewhat conservatively, valuing simplicity in language design and setup, while the community around new modules and plugins being developed and contributed moves very very quickly, typically adding 20 or so new modules in each release.
 
 .. _an_introduction:
 
@@ -70,7 +69,7 @@ Playbooks
 
 Playbooks are Ansible's configuration, deployment, and orchestration language.  They can describe a policy you want your remote systems to enforce, or a set of steps in a general IT process.
 
-If Ansible modules are your the tools in your workshop, playbooks are your design plans.
+If Ansible modules are the tools in your workshop, playbooks are your design plans.
 
 At a basic level, playbooks can be used to manage configurations of and deployments to remote machines.  At a more advanced level, they can sequence multi-tier rollouts involving rolling updates, and can delegate actions to other hosts, interacting with monitoring servers and load balancers along the way.  
 

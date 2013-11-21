@@ -11,7 +11,7 @@ Introduction
 
 
 Ansible ships with a number of modules (called the 'module library')
-that can be executed directly on remote hosts or through :doc:`playbooks`.
+that can be executed directly on remote hosts or through :doc:`Playbooks <playbooks>`.
 Users can also write their own modules.   These modules can control system
 resources, like services, packages, or files (anything really), or
 handle executing system commands.
@@ -45,7 +45,7 @@ Modules are `idempotent`, meaning they will seek to avoid changes to the system 
 playbooks, these modules can trigger 'change events' in the form of notifying 'handlers'
 to run additional tasks.
 
-Documention for each module can be accessed from the command line with the
+Documentation for each module can be accessed from the command line with the
 ansible-doc as well as the man command::
 
     ansible-doc command

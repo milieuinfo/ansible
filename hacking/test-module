@@ -158,8 +158,7 @@ def main():
         rundebug(options.debugger, modfile, argspath)
     else:
         runtest(modfile, argspath)
-	
+        
 if __name__ == "__main__":
     main()
-
 

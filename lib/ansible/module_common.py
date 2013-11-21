@@ -47,7 +47,9 @@ class ModuleReplacer(object):
 
     from ansible.module_utils.basic import * 
 
-    will result in a slurping in of basic.py
+    will result in a template evaluation of
+
+    {{ include 'basic.py' }} 
 
     from the module_utils/ directory in the source tree.
 
@@ -64,6 +66,7 @@ class ModuleReplacer(object):
 
     # ******************************************************************************
 
+
     def slurp(self, path):
         if not os.path.exists(path):
             raise errors.AnsibleError("imported module support code does not exist at %s" % path)
@@ -71,8 +74,6 @@ class ModuleReplacer(object):
         data = fd.read()
         fd.close()
         return data
-
-    # ******************************************************************************
 
     def _find_snippet_imports(self, module_data, module_path):
         """
@@ -109,6 +110,7 @@ class ModuleReplacer(object):
                 snippet_name = tokens[2].split()[0]
                 snippet_names.append(snippet_name)
                 output.write(self.slurp(os.path.join(self.snippet_path, snippet_name + ".py")))
+
             else:
                 if self.strip_comments and line.startswith("#") or line == '':
                     pass

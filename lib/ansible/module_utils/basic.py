@@ -348,10 +348,12 @@ class AnsibleModule(object):
         # argument context, which may have selevel.
 
         for i in range(len(cur_context)):
-            if context[i] is not None and context[i] != cur_context[i]:
-                new_context[i] = context[i]
-            if context[i] is None:
-                new_context[i] = cur_context[i]
+            if len(context) > i:
+                if context[i] is not None and context[i] != cur_context[i]:
+                    new_context[i] = context[i]
+                if context[i] is None:
+                    new_context[i] = cur_context[i]
+
         if cur_context != new_context:
             try:
                 if self.check_mode:
@@ -511,6 +513,8 @@ class AnsibleModule(object):
                 kwargs['state'] = 'link'
             elif os.path.isdir(path):
                 kwargs['state'] = 'directory'
+            elif os.stat(path).st_nlink > 1:
+                kwargs['state'] = 'hard'
             else:
                 kwargs['state'] = 'file'
             if HAVE_SELINUX and self.selinux_enabled():
@@ -616,6 +620,39 @@ class AnsibleModule(object):
             else:
                 self.fail_json(msg="internal error: do not know how to interpret argument_spec")
 
+    def safe_eval(self, str, locals=None, include_exceptions=False):
+
+        # do not allow method calls to modules
+        if not isinstance(str, basestring):
+            # already templated to a datastructure, perhaps?
+            if include_exceptions:
+                return (str, None)
+            return str
+        if re.search(r'\w\.\w+\(', str):
+            if include_exceptions:
+                return (str, None)
+            return str
+        # do not allow imports
+        if re.search(r'import \w+', str):
+            if include_exceptions:
+                return (str, None)
+            return str
+        try:
+            result = None
+            if not locals:
+                result = eval(str)
+            else:
+                result = eval(str, None, locals)
+            if include_exceptions:
+                return (result, None)
+            else:
+                return result
+        except Exception, e:
+            if include_exceptions:
+                return (str, e)
+            return str
+
+
     def _check_argument_types(self):
         ''' ensure all arguments have the requested type '''
         for (k, v) in self.argument_spec.iteritems():
@@ -640,7 +677,18 @@ class AnsibleModule(object):
             elif wanted == 'dict':
                 if not isinstance(value, dict):
                     if isinstance(value, basestring):
-                        self.params[k] = dict([x.split("=", 1) for x in value.split(",")])
+                        if value.startswith("{"):
+                            try:
+                                self.params[k] = json.loads(value)
+                            except:
+                                (result, exc) = self.safe_eval(value, dict(), include_exceptions=True)
+                                if exc is not None:
+                                    self.fail_json(msg="unable to evaluate dictionary for %s" % k)
+                                self.params[k] = result
+                        elif '=' in value:
+                            self.params[k] = dict([x.split("=", 1) for x in value.split(",")])
+                        else:
+                            self.fail_json(msg="dictionary requested, could not parse JSON or key=value")
                     else:
                         is_invalid = True
             elif wanted == 'bool':
@@ -682,7 +730,7 @@ class AnsibleModule(object):
             try:
                 (k, v) = x.split("=",1)
             except Exception, e:
-                self.fail_json(msg="this module requires key=value arguments (%s)" % items)
+                self.fail_json(msg="this module requires key=value arguments (%s)" % (items))
             params[k] = v
         params2 = json.loads(MODULE_COMPLEX_ARGS)
         params2.update(params)
@@ -893,7 +941,7 @@ class AnsibleModule(object):
             # rename might not preserve context
             self.set_context_if_different(dest, context, False)
 
-    def run_command(self, args, check_rc=False, close_fds=False, executable=None, data=None, binary_data=False):
+    def run_command(self, args, check_rc=False, close_fds=False, executable=None, data=None, binary_data=False, path_prefix=None):
         '''
         Execute a command, returns rc, stdout, and stderr.
         args is the command to run
@@ -917,16 +965,33 @@ class AnsibleModule(object):
         rc = 0
         msg = None
         st_in = None
+
+        # Set a temporart env path if a prefix is passed
+        env=os.environ
+        if path_prefix:
+            env['PATH']="%s:%s" % (path_prefix, env['PATH'])
+
         if data:
             st_in = subprocess.PIPE
         try:
-            cmd = subprocess.Popen(args,
-                                   executable=executable,
-                                   shell=shell,
-                                   close_fds=close_fds,
-                                   stdin=st_in,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
+            if path_prefix is not None:
+                cmd = subprocess.Popen(args,
+                                       executable=executable,
+                                       shell=shell,
+                                       close_fds=close_fds,
+                                       stdin=st_in,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE,
+                                       env=env)
+            else:
+                cmd = subprocess.Popen(args,
+                                       executable=executable,
+                                       shell=shell,
+                                       close_fds=close_fds,
+                                       stdin=st_in,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE)
+            
             if data:
                 if not binary_data:
                     data += '\\n'
@@ -956,3 +1021,5 @@ class AnsibleModule(object):
             if size >= limit:
                 break
         return '%.2f %s' % (float(size)/ limit, suffix)
+
+

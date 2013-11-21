@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: ansible
 .\"    Author: :doctype:manpage
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 10/29/2013
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 11/21/2013
 .\"    Manual: System administration commands
-.\"    Source: Ansible 1.4.0-acd0-20131029
+.\"    Source: Ansible 1.4.0-acd0-20131121
 .\"  Language: English
 .\"
-.TH "ANSIBLE" "1" "10/29/2013" "Ansible 1\&.4\&.0\-acd0\-20131" "System administration commands"
+.TH "ANSIBLE" "1" "11/21/2013" "Ansible 1\&.4\&.0\-acd0\-20131" "System administration commands"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -45,14 +45,14 @@ This is useful both for extreme scale\-out as well as periodic remediation\&. Us
 .PP
 \fBfilename\&.yml\fR
 .RS 4
-The name of one the YAML format files to run as an ansible playbook\&. This can be a relative path within the checkout\&. If not provided, ansible\-pull will look for a playbook based on the host\(cqs fully\-qualified domain name and finally a playbook named
+The name of one the YAML format files to run as an ansible playbook\&. This can be a relative path within the checkout\&. If not provided, ansible\-pull will look for a playbook based on the host\(cqs fully\-qualified domain name, on the host hostname and finally a playbook named
 \fBlocal\&.yml\fR\&.
 .RE
 .SH "OPTIONS"
 .PP
 \fB\-d\fR \fIDEST\fR, \fB\-\-directory=\fR\fIDEST\fR
 .RS 4
-Directory to checkout repository into\&.
+Directory to checkout repository into\&. If not provided, a subdirectory of ~/\&.ansible/pull/ will be used\&.
 .RE
 .PP
 \fB\-U\fR \fIURL\fR, \fB\-\-url=\fR\fIURL\fR

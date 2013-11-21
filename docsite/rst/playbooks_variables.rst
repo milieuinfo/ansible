@@ -167,6 +167,33 @@ This allows an explicit check with this feature off::
 
 The variable value will be used as is, but the template evaluation will raise an error if it is undefined.
 
+.. _set_theory_filters:
+
+Set Theory Filters
+--------------------
+All these functions return a unique set from sets or lists.
+.. versionadded:: 1.4
+
+To get a unique set from a list::
+
+    {{ list1 |unique }}
+
+To get a union of two lists::
+
+    {{ list1 | union(list2) }}
+
+To get the intersection of 2 lists (unique list of all items in both)::
+
+    {{ list1 |intersect(list2)}}
+
+To get the difference of 2 lists (items in 1 that don't exist in 2)::
+
+    {{ list1 |difference(list2)}}
+
+To get the symetric difference of 2 lists (items exclusive to each list)::
+
+    {{ list1 |symetric_difference(list2)}}
+
 .. _other_useful_filters:
 
 Other Useful Filters
@@ -825,7 +852,7 @@ Ok, so if you are writing a redistributable role with reasonable defaults, put t
 the role will bring along a default value but ANYTHING in Ansible will override it.  It's just a default.  That's why it says "defaults" :)
 See `intro_roles` for more info about this::
 
-    ----
+    ---
     # file: roles/x/defaults/main.yml
     # if not overriden in inventory or as a parameter, this is the value that will be used
     http_port: 80
@@ -833,7 +860,7 @@ See `intro_roles` for more info about this::
 if you are writing a role and want to ensure the value in the role is absolutely used in that role, and is not going to be overridden
 by inventory, you should but it in roles/x/vars/main.yml like so, and inventory values cannot override it.  -e however, still will::
 
-    ----
+    ---
     # file: roles/x/vars/main.yml
     # this will absolutely be used in this role
     http_port: 80

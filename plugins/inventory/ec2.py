@@ -373,6 +373,9 @@ class Ec2Inventory(object):
             for name in route53_names:
                 self.push(self.inventory, name, dest)
 
+        # Global Tag: tag all EC2 instances
+        self.push(self.inventory, 'ec2', dest)
+
 
     def add_rds_instance(self, instance, region):
         ''' Adds an RDS instance to the inventory and index, as long as it is
@@ -423,6 +426,9 @@ class Ec2Inventory(object):
 
         # Inventory: Group by parameter group
         self.push(self.inventory, self.to_safe("rds_parameter_group_" + instance.parameter_group.name), dest)
+
+        # Global Tag: all RDS instances
+        self.push(self.inventory, 'rds', dest)
 
 
     def get_route53_records(self):
@@ -496,7 +502,14 @@ class Ec2Inventory(object):
             key = self.to_safe('ec2_' + key)
 
             # Handle complex types
-            if type(value) in [int, bool]:
+            # state/previous_state changed to properties in boto in https://github.com/boto/boto/commit/a23c379837f698212252720d2af8dec0325c9518
+            if key == 'ec2__state':
+                instance_vars['ec2_state'] = instance.state or ''
+                instance_vars['ec2_state_code'] = instance.state_code
+            elif key == 'ec2__previous_state':
+                instance_vars['ec2_previous_state'] = instance.previous_state or ''
+                instance_vars['ec2_previous_state_code'] = instance.previous_state_code
+            elif type(value) in [int, bool]:
                 instance_vars[key] = value
             elif type(value) in [str, unicode]:
                 instance_vars[key] = value.strip()

@@ -40,11 +40,13 @@ from ansible.utils import template
 from ansible.utils import check_conditional
 from ansible import errors
 from ansible import module_common
-from ansible.module_common import ModuleReplacer
 import poller
 import connection
 from return_data import ReturnData
 from ansible.callbacks import DefaultRunnerCallbacks, vv
+from ansible.module_common import ModuleReplacer
+
+module_replacer = ModuleReplacer(strip_comments=False)
 
 HAS_ATFORK=True
 try:
@@ -52,7 +54,6 @@ try:
 except ImportError:
     HAS_ATFORK=False
 
-module_replacer = ModuleReplacer(strip_comments=False)
 multiprocessing_runner = None
         
 OUTPUT_LOCKFILE  = tempfile.TemporaryFile()
@@ -73,6 +74,11 @@ def _executor_hook(job_queue, result_queue, new_stdin):
             host = job_queue.get(block=False)
             return_data = multiprocessing_runner._executor(host, new_stdin)
             result_queue.put(return_data)
+
+            if 'LEGACY_TEMPLATE_WARNING' in return_data.flags:
+                # pass data back up across the multiprocessing fork boundary
+                template.Flags.LEGACY_TEMPLATE_WARNING = True
+
         except Queue.Empty:
             pass
         except:
@@ -132,6 +138,7 @@ class Runner(object):
         complex_args=None,                  # structured data in addition to module_args, must be a dict
         error_on_undefined_vars=C.DEFAULT_UNDEFINED_VAR_BEHAVIOR, # ex. False
         accelerate=False,                   # use accelerated connection
+        accelerate_ipv6=False,              # accelerated connection w/ IPv6
         accelerate_port=None,               # port to use with accelerated connection
         ):
 
@@ -177,6 +184,7 @@ class Runner(object):
         self.error_on_undefined_vars = error_on_undefined_vars
         self.accelerate       = accelerate
         self.accelerate_port  = accelerate_port
+        self.accelerate_ipv6  = accelerate_ipv6
         self.callbacks.runner = self
         self.original_transport = self.transport
 
@@ -368,6 +376,15 @@ class Runner(object):
     def _executor(self, host, new_stdin):
         ''' handler for multiprocessing library '''
 
+        def get_flags():
+            # flags are a way of passing arbitrary event information
+            # back up the chain, since multiprocessing forks and doesn't
+            # allow state exchange
+            flags = []
+            if template.Flags.LEGACY_TEMPLATE_WARNING:
+                flags.append('LEGACY_TEMPLATE_WARNING')
+            return flags
+
         try:
             if not new_stdin:
                 self._new_stdin = os.fdopen(os.dup(sys.stdin.fileno()))
@@ -377,6 +394,7 @@ class Runner(object):
             exec_rc = self._executor_internal(host, new_stdin)
             if type(exec_rc) != ReturnData:
                 raise Exception("unexpected return type: %s" % type(exec_rc))
+            exec_rc.flags = get_flags()
             # redundant, right?
             if not exec_rc.comm_ok:
                 self.callbacks.on_unreachable(host, exec_rc.result)
@@ -384,11 +402,11 @@ class Runner(object):
         except errors.AnsibleError, ae:
             msg = str(ae)
             self.callbacks.on_unreachable(host, msg)
-            return ReturnData(host=host, comm_ok=False, result=dict(failed=True, msg=msg))
+            return ReturnData(host=host, comm_ok=False, result=dict(failed=True, msg=msg), flags=get_flags())
         except Exception:
             msg = traceback.format_exc()
             self.callbacks.on_unreachable(host, msg)
-            return ReturnData(host=host, comm_ok=False, result=dict(failed=True, msg=msg))
+            return ReturnData(host=host, comm_ok=False, result=dict(failed=True, msg=msg), flags=get_flags())
 
     # *****************************************************
 
@@ -444,12 +462,15 @@ class Runner(object):
             if type(items) != list:
                 raise errors.AnsibleError("lookup plugins have to return a list: %r" % items)
 
-            # hack for apt, yum, and pkgng so that with_items maps back into a single module call
             if len(items) and utils.is_list_of_strings(items) and self.module_name in [ 'apt', 'yum', 'pkgng' ]:
-                # only join the item/package names if this task is not conditional
-                if not self.conditional:
-                    inject['item'] = ",".join(items)
-                    items = None
+                # hack for apt, yum, and pkgng so that with_items maps back into a single module call
+                use_these_items = []
+                for x in items:
+                    inject['item'] = x
+                    if not self.conditional or utils.check_conditional(self.conditional, self.basedir, inject, fail_on_undefined=self.error_on_undefined_vars):
+                        use_these_items.append(x)
+                inject['item'] = ",".join(use_these_items)
+                items = None
 
         # logic to replace complex args if possible
         complex_args = self.complex_args
@@ -564,6 +585,7 @@ class Runner(object):
         actual_pass = inject.get('ansible_ssh_pass', self.remote_pass)
         actual_transport = inject.get('ansible_connection', self.transport)
         actual_private_key_file = inject.get('ansible_ssh_private_key_file', self.private_key_file)
+        self.sudo_pass = inject.get('ansible_sudo_pass', self.sudo_pass)
 
         if self.accelerate and actual_transport != 'local':
             #Fix to get the inventory name of the host to accelerate plugin
@@ -603,6 +625,7 @@ class Runner(object):
                 actual_pass = delegate_info.get('ansible_ssh_pass', actual_pass)
                 actual_private_key_file = delegate_info.get('ansible_ssh_private_key_file', self.private_key_file)
                 actual_transport = delegate_info.get('ansible_connection', self.transport)
+                self.sudo_pass = delegate_info.get('ansible_sudo_pass', self.sudo_pass)
                 for i in delegate_info:
                     if i.startswith("ansible_") and i.endswith("_interpreter"):
                         inject[i] = delegate_info[i]
@@ -729,6 +752,10 @@ class Runner(object):
             executable = C.DEFAULT_EXECUTABLE
 
         sudo_user = self.sudo_user
+        
+        if self.remote_user == sudo_user:
+            sudoable = False
+        
         rc, stdin, stdout, stderr = conn.exec_command(cmd, tmp, sudo_user, sudoable=sudoable, executable=executable)
 
         if type(stdout) not in [ str, unicode ]:
@@ -829,6 +856,7 @@ class Runner(object):
         in_path = utils.plugins.module_finder.find_plugin(module_name)
         if in_path is None:
             raise errors.AnsibleFileNotFound("module %s not found in %s" % (module_name, utils.plugins.module_finder.print_paths()))
+
         out_path = os.path.join(tmp, module_name)
 
         # insert shared code and arguments into the module
@@ -836,8 +864,8 @@ class Runner(object):
             in_path, complex_args, module_args, inject
         )
 
-        # ship the module
         self._transfer_str(conn, tmp, module_name, module_data)
+
         return (out_path, module_style, shebang)
 
     # *****************************************************

@@ -1,6 +1,12 @@
-ansible (1.4.0-acd0-20131029) UNRELEASED; urgency=low
+ansible (1.4.0-acd0-20131121) unstable; urgency=low
 
-  * update to current devel: 1.4.0-acd0-20131014
+  * merge to released 1.4.0: 1.4.0-acd0-20131121
+
+ -- Serge van Ginderachter <serge@vanginderachter.be>  Thu, 21 Nov 2013 22:58:22 +0100
+
+ansible (1.4.0-acd0-20131029) unstable; urgency=low
+
+  * update to current devel: 1.4.0-acd0-20131029
 
  -- Serge van Ginderachter <serge@vanginderachter.be>  Tue, 29 Oct 2013 11:56:06 +0100
 
