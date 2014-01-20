@@ -1,3 +1,21 @@
+ansible (1.5.0-acd0-20140116) UNRELEASED; urgency=low
+
+  * Merge with 1.5 devel
+
+ -- Serge van Ginderachter <serge@vanginderachter.be>  Thu, 16 Jan 2014 17:12:38 +0100
+
+ansible (1.5) unstable; urgency=low
+
+  * 1.5 release (PENDING)
+ 
+ -- Michael DeHaan <michael.dehaan@gmail.com>  Wed, 27 November 2013 15:00:02 -0500
+
+ansible (1.4.1) unstable; urgency=low
+
+  * 1.4.1 release
+
+ -- Michael DeHaan <michael.dehaan@gmail.com>  Wed, 27 November 2013 15:00:01 -0500
+
 ansible (1.4.0-acd0-20131121) unstable; urgency=low
 
   * merge to released 1.4.0: 1.4.0-acd0-20131121
