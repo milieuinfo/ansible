@@ -117,35 +117,50 @@ class Connection(object):
             os.close(self.wfd)
 
     def not_in_host_file(self, host):
-        host_file = os.path.expanduser(os.path.expandvars("~${USER}/.ssh/known_hosts"))
-        if not os.path.exists(host_file):
-            print "previous known host file not found"
-            return True
-        host_fh = open(host_file)
-        data = host_fh.read()
-        host_fh.close()
-        for line in data.split("\n"):
-            if line is None or line.find(" ") == -1:
+        if 'USER' in os.environ:
+            user_host_file = os.path.expandvars("~${USER}/.ssh/known_hosts")
+        else:
+            user_host_file = "~/.ssh/known_hosts"
+        user_host_file = os.path.expanduser(user_host_file)
+        
+        host_file_list = []
+        host_file_list.append(user_host_file)
+        host_file_list.append("/etc/ssh/ssh_known_hosts")
+        host_file_list.append("/etc/ssh/ssh_known_hosts2")
+        
+        hfiles_not_found = 0
+        for hf in host_file_list:
+            if not os.path.exists(hf):
+                hfiles_not_found += 1
                 continue
-            tokens = line.split()
-            if tokens[0].find(self.HASHED_KEY_MAGIC) == 0:
-                # this is a hashed known host entry
-                try:
-                    (kn_salt,kn_host) = tokens[0][len(self.HASHED_KEY_MAGIC):].split("|",2)
-                    hash = hmac.new(kn_salt.decode('base64'), digestmod=sha1)
-                    hash.update(host)
-                    if hash.digest() == kn_host.decode('base64'):
-                        return False
-                except:
-                    # invalid hashed host key, skip it
+            host_fh = open(hf)
+            data = host_fh.read()
+            host_fh.close()
+            for line in data.split("\n"):
+                if line is None or line.find(" ") == -1:
                     continue
-            else:
-                # standard host file entry
-                if host in tokens[0]:
-                    return False
+                tokens = line.split()
+                if tokens[0].find(self.HASHED_KEY_MAGIC) == 0:
+                    # this is a hashed known host entry
+                    try:
+                        (kn_salt,kn_host) = tokens[0][len(self.HASHED_KEY_MAGIC):].split("|",2)
+                        hash = hmac.new(kn_salt.decode('base64'), digestmod=sha1)
+                        hash.update(host)
+                        if hash.digest() == kn_host.decode('base64'):
+                            return False
+                    except:
+                        # invalid hashed host key, skip it
+                        continue
+                else:
+                    # standard host file entry
+                    if host in tokens[0]:
+                        return False
+
+        if (hfiles_not_found == len(host_file_list)):
+            print "previous known host file not found"
         return True
 
-    def exec_command(self, cmd, tmp_path, sudo_user,sudoable=False, executable='/bin/sh', in_data=None):
+    def exec_command(self, cmd, tmp_path, sudo_user=None, sudoable=False, executable='/bin/sh', in_data=None, su_user=None, su=False):
         ''' run a command on the remote host '''
 
         ssh_cmd = self._password_cmd()
@@ -165,7 +180,10 @@ class Connection(object):
             ssh_cmd += ['-6']
         ssh_cmd += [self.host]
 
-        if not self.runner.sudo or not sudoable:
+        if su and su_user:
+            sudocmd, prompt, success_key = utils.make_su_cmd(su_user, executable, cmd)
+            ssh_cmd.append(sudocmd)
+        elif not self.runner.sudo or not sudoable:
             if executable:
                 ssh_cmd.append(executable + ' -c ' + pipes.quote(cmd))
             else:
@@ -183,7 +201,7 @@ class Connection(object):
             # the host to known hosts is not intermingled with multiprocess output.
             fcntl.lockf(self.runner.process_lockfile, fcntl.LOCK_EX)
             fcntl.lockf(self.runner.output_lockfile, fcntl.LOCK_EX)
-        
+
         # create process
         if in_data:
             # do not use pseudo-pty
@@ -206,7 +224,8 @@ class Connection(object):
 
         self._send_password()
 
-        if self.runner.sudo and sudoable and self.runner.sudo_pass:
+        if (self.runner.sudo and sudoable and self.runner.sudo_pass) or \
+                (self.runner.su and su and self.runner.su_pass):
             # several cases are handled for sudo privileges with password
             # * NOPASSWD (tty & no-tty): detect success_key on stdout
             # * without NOPASSWD:
@@ -225,7 +244,7 @@ class Connection(object):
                 if p.stderr in rfd:
                     chunk = p.stderr.read()
                     if not chunk:
-                        raise errors.AnsibleError('ssh connection closed waiting for sudo password prompt')
+                        raise errors.AnsibleError('ssh connection closed waiting for sudo or su password prompt')
                     sudo_errput += chunk
                     incorrect_password = gettext.dgettext(
                         "sudo", "Sorry, try again.")
@@ -237,16 +256,19 @@ class Connection(object):
                 if p.stdout in rfd:
                     chunk = p.stdout.read()
                     if not chunk:
-                        raise errors.AnsibleError('ssh connection closed waiting for sudo password prompt')
+                        raise errors.AnsibleError('ssh connection closed waiting for sudo or su password prompt')
                     sudo_output += chunk
 
                 if not rfd:
                     # timeout. wrap up process communication
                     stdout = p.communicate()
-                    raise errors.AnsibleError('ssh connection error waiting for sudo password prompt')
+                    raise errors.AnsibleError('ssh connection error waiting for sudo or su password prompt')
 
             if success_key not in sudo_output:
-                stdin.write(self.runner.sudo_pass + '\n')
+                if sudoable:
+                    stdin.write(self.runner.sudo_pass + '\n')
+                elif su:
+                    stdin.write(self.runner.su_pass + '\n')
             fcntl.fcntl(p.stdout, fcntl.F_SETFL, fcntl.fcntl(p.stdout, fcntl.F_GETFL) & ~os.O_NONBLOCK)
             fcntl.fcntl(p.stderr, fcntl.F_SETFL, fcntl.fcntl(p.stderr, fcntl.F_GETFL) & ~os.O_NONBLOCK)
         # We can't use p.communicate here because the ControlMaster may have stdout open as well
@@ -262,12 +284,18 @@ class Connection(object):
         while True:
             rfd, wfd, efd = select.select(rpipes, [], rpipes, 1)
 
-            # fail early if the sudo password is wrong
+            # fail early if the sudo/su password is wrong
             if self.runner.sudo and sudoable and self.runner.sudo_pass:
                 incorrect_password = gettext.dgettext(
                     "sudo", "Sorry, try again.")
                 if stdout.endswith("%s\r\n%s" % (incorrect_password, prompt)):
-                    raise errors.AnsibleError('Incorrect sudo password') 
+                    raise errors.AnsibleError('Incorrect sudo password')
+
+            if self.runner.su and su and self.runner.sudo_pass:
+                incorrect_password = gettext.dgettext(
+                    "su", "Sorry")
+                if stdout.endswith("%s\r\n%s" % (incorrect_password, prompt)):
+                    raise errors.AnsibleError('Incorrect su password')
 
             if p.stdout in rfd:
                 dat = os.read(p.stdout.fileno(), 9000)
@@ -286,6 +314,9 @@ class Connection(object):
             # Calling wait while there are still pipes to read can cause a lock
             elif not rpipes and p.poll() == None:
                 p.wait()
+                # the process has finished and the pipes are empty,
+                # if we loop and do the select it waits all the timeout
+                break
         stdin.close() # close stdin after we read from stdout (see also issue #848)
         
         if C.HOST_KEY_CHECKING and not_in_host_file:

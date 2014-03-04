@@ -37,7 +37,7 @@ in the GitHub project perform custom logging, send email, or even play sound eff
 Check Mode
 ++++++++++
 
-Refers to running Ansible with the --check option, which does not make any changes on the remote systems, but only outputs the changes that
+Refers to running Ansible with the ``--check`` option, which does not make any changes on the remote systems, but only outputs the changes that
 might occur if the command ran without this flag.  This is analogous to so-called "dry run" modes in other systems, though the user should
 be warned that this does not take into account unexpected command failures or cascade effects (which is true of similar modes in other
 systems).  Use this to get an idea of what might happen, but it is not a substitute for a good staging environment.
@@ -48,7 +48,7 @@ Connection Type, Connection Plugin
 By default, Ansible talks to remote machines through pluggable libraries.  Ansible supports native OpenSSH ('ssh'), or a Python
 implementation called 'paramiko'.  OpenSSH is preferred if you are using a recent version, and also enables some features 
 like Kerberos and jump hosts.  This is covered in the getting started section.  
-There are also other connection types like 'fireball' mode, which must be bootstrapped
+There are also other connection types like 'accelerate' mode, which must be bootstrapped
 over one of the SSH-based connection types but is very fast, and local mode, which acts on the local system.  
 Users can also write their own connection plugins.
 
@@ -62,8 +62,8 @@ discussed in the playbook documentation.
 Diff Mode
 +++++++++
 
-A --diff flag can be passed to Ansible to show how template files change when they are overwritten, or how they might change when used
-with --check mode.   These diffs come out in unified diff format.
+A ``--diff`` flag can be passed to Ansible to show how template files change when they are overwritten, or how they might change when used
+with ``--check`` mode.   These diffs come out in unified diff format.
 
 Facts
 +++++
@@ -81,19 +81,10 @@ A filter plugin is something that most users will never need to understand.  The
 are more or less only of use to people who know what Jinja2 filters are.  If you need them, you can learn how to write them in the API
 docs section.
 
-Fireball Mode
-+++++++++++++
-
-By default, Ansible uses SSH for connections -- either paramiko or native OpenSSH, a common alternative.  (Ansible tries to use
-'ssh' by default if possible in Ansible 1.2.1 and later, but previously defaulted to paramiko).  Some users
-may want to execute operations even faster though, and they can if they opt to run their tasks using an ephemeral 'fireball' message bus.  What happens in this mode is that Ansible
-will start talking to a node over SSH, and then set up a secure, temporary message bus that authenticates only a single machine, and that will
-self destruct after a set period of time.  This means the bus does not allow management of any kind after the time interval has expired.
-
 Forks
 +++++
 
-Ansible talks to remote nodes in parallel and the level of parallelism can be set either by passing --forks, or editing the default in a configuration
+Ansible talks to remote nodes in parallel and the level of parallelism can be set either by passing ``--forks``, or editing the default in a configuration
 file.  The default is a very conservative 5 forks, though if you have a lot of RAM, you can easily set this to a value like 50 for increased
 parallelism.  
 
@@ -228,7 +219,7 @@ A collection of modules made available to /usr/bin/ansible or an Ansible playboo
 Limit Groups
 ++++++++++++
 
-By passing "--limit somegroup" to ansible or ansible-playbook, the commands can be limited to a subset of hosts.  For instance, 
+By passing ``--limit somegroup`` to ansible or ansible-playbook, the commands can be limited to a subset of hosts.  For instance, 
 this can be used to run a playbook that normally targets an entire set of servers to one particular server.
 
 Local Connection
@@ -398,7 +389,7 @@ constructs like loops and if statements.
 Transport
 +++++++++
 
-Ansible uses "Connection Plugins" to define types of available transports.  These are simply how Ansible will reach out to managed systems.  Transports included are paramiko, SSH (using OpenSSH), fireball (an SSH-bootstrapped accelerated connection plugin), and local. 
+Ansible uses "Connection Plugins" to define types of available transports.  These are simply how Ansible will reach out to managed systems.  Transports included are paramiko, SSH (using OpenSSH), and local.
 
 When
 ++++

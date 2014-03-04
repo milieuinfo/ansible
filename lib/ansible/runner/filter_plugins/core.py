@@ -30,14 +30,20 @@ def to_nice_yaml(*a, **kw):
     '''Make verbose, human readable yaml'''
     return yaml.safe_dump(*a, indent=4, allow_unicode=True, default_flow_style=False, **kw)
 
-def to_nice_json(*a, **kw):
+def to_json(a, *args, **kw):
+    ''' Convert the value to JSON '''
+    return json.dumps(a, *args, **kw)
+
+def to_nice_json(a, *args, **kw):
     '''Make verbose, human readable JSON'''
-    return json.dumps(*a, indent=4, sort_keys=True, **kw)
+    return json.dumps(a, indent=4, sort_keys=True, *args, **kw)
 
 def failed(*a, **kw):
     ''' Test if task result yields failed '''
     item = a[0]
     if type(item) != dict:
+        print "DEBUG: GOT A"
+        print item
         raise errors.AnsibleFilterError("|failed expects a dictionary")
     rc = item.get('rc',0)
     failed = item.get('failed',False)
@@ -148,7 +154,7 @@ class FilterModule(object):
             'b64encode': base64.b64encode,
 
             # json
-            'to_json': json.dumps,
+            'to_json': to_json,
             'to_nice_json': to_nice_json,
             'from_json': json.loads,
 
@@ -160,6 +166,7 @@ class FilterModule(object):
             # path
             'basename': os.path.basename,
             'dirname': os.path.dirname,
+            'expanduser': os.path.expanduser,
             'realpath': os.path.realpath,
 
             # failure testing

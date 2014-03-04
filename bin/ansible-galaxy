@@ -2,7 +2,7 @@
 
 ########################################################################
 #
-# (C) 2013, James Cammarata <jcammarata@ansibleworks.com>
+# (C) 2013, James Cammarata <jcammarata@ansible.com>
 #
 # This file is part of Ansible
 #
@@ -45,6 +45,13 @@ galaxy_info:
   author: {{ author }}
   description: {{description}}
   company: {{ company }}
+  # Some suggested licenses:
+  # - BSD (default)
+  # - MIT
+  # - GPLv2
+  # - GPLv3
+  # - Apache
+  # - CC-BY
   license: {{ license }}
   min_ansible_version: {{ min_ansible_version }}
   #
@@ -99,6 +106,15 @@ Dependencies
 ------------
 
 A list of other roles hosted on Galaxy should go here, plus any details in regards to parameters that may need to be set for other roles, or variables that are used from other roles.
+
+Example Playbook
+-------------------------
+
+Including an example of how to use your role (for instance, with variables passed in as parameters) is always nice for users too:
+
+    - hosts: servers
+      roles:
+         - { role: username.rolename, x: 42 }
 
 License
 -------
@@ -157,7 +173,7 @@ def build_option_parser(action):
             help='The path in which the skeleton role will be created.'
                  'The default is the current working directory.')
     elif action == "install":
-        parser.set_usage("usage: %prog install [options] [-f FILE | role_name(s)[,version] | tar_file(s)]")
+        parser.set_usage("usage: %prog install [options] [-r FILE | role_name(s)[,version] | tar_file(s)]")
         parser.add_option(
             '-i', '--ignore-errors', dest='ignore_errors', action='store_true', default=False,
             help='Ignore errors and continue with the next specified role.')
@@ -182,7 +198,7 @@ def build_option_parser(action):
 
     if action in ("info","init","install"):
         parser.add_option(
-            '-s', '--server', dest='api_server', default="galaxy.ansibleworks.com",
+            '-s', '--server', dest='api_server', default="galaxy.ansible.com",
             help='The API server destination')
 
     if action in ("init","install"):
@@ -494,7 +510,7 @@ def execute_init(args, options, parser):
     """
 
     init_path  = get_opt(options, 'init_path', './')
-    api_server = get_opt(options, "api_server", "galaxy.ansibleworks.com")
+    api_server = get_opt(options, "api_server", "galaxy.ansible.com")
     force      = get_opt(options, 'force', False)
 
     api_config = api_get_config(api_server)
@@ -599,7 +615,7 @@ def execute_install(args, options, parser):
     """
 
     role_file  = get_opt(options, "role_file", None)
-    api_server = get_opt(options, "api_server", "galaxy.ansibleworks.com")
+    api_server = get_opt(options, "api_server", "galaxy.ansible.com")
     no_deps    = get_opt(options, "no_deps", False)
 
     if len(args) == 0 and not role_file:
