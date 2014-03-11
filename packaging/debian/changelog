@@ -1,8 +1,8 @@
-ansible (1.6.0-acd-20140311-0-groupvars-subdirs-patch) UNRELEASED; urgency=low
+ansible (1.6.0-acd-20140311-1-groupvars-subdirs-patch) UNRELEASED; urgency=low
 
-  * update to latest devel 1.6
+  *  revert bugged tag commit
 
- -- Serge van Ginderachter <serge@vanginderachter.be>  Tue, 11 Mar 2014 12:23:28 +0100
+ -- Serge van Ginderachter <serge@vanginderachter.be>  Tue, 11 Mar 2014 14:17:19 +0100
 
 ansible (1.6) unstable; urgency=low
 
