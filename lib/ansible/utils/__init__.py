@@ -42,6 +42,7 @@ import traceback
 import getpass
 import sys
 import textwrap
+import json
 
 #import vault
 from vault import VaultLib
@@ -350,9 +351,25 @@ def smush_ds(data):
     else:
         return data
 
-def parse_yaml(data):
-    ''' convert a yaml string to a data structure '''
-    return smush_ds(yaml.safe_load(data))
+def parse_yaml(data, path_hint=None):
+    ''' convert a yaml string to a data structure.  Also supports JSON, ssssssh!!!'''
+
+    stripped_data = data.lstrip()
+    loaded = None
+    if stripped_data.startswith("{") or stripped_data.startswith("["):
+        # since the line starts with { or [ we can infer this is a JSON document.
+        try:
+            loaded = json.loads(data)
+        except ValueError, ve:
+            if path_hint:
+                raise errors.AnsibleError(path_hint + ": " + str(ve))
+            else:
+                raise errors.AnsibleError(str(ve))
+    else:
+        # else this is pretty sure to be a YAML document
+        loaded = yaml.safe_load(data)
+
+    return smush_ds(loaded)
 
 def process_common_errors(msg, probline, column):
     replaced = probline.replace(" ","")
@@ -512,7 +529,7 @@ def parse_yaml_from_file(path, vault_password=None):
         data = vault.decrypt(data)
 
     try:
-        return parse_yaml(data)
+        return parse_yaml(data, path_hint=path)
     except yaml.YAMLError, exc:
         process_yaml_error(exc, data, path)
 
@@ -1071,3 +1088,12 @@ def random_password(length=20, chars=C.DEFAULT_PASSWORD_CHARS):
             password.append(new_char)
 
     return ''.join(password)
+
+def before_comment(msg):
+    ''' what's the part of a string before a comment? '''
+    msg = msg.replace("\#","**NOT_A_COMMENT**")
+    msg = msg.split("#")[0]
+    msg = msg.replace("**NOT_A_COMMENT**","#")
+    return msg
+
+
