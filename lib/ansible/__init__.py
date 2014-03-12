@@ -14,5 +14,5 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
-__version__ = '1.6.0-acd-20140311-1-groupvars-subdirs-patch'
+__version__ = '1.6.0-acd-20140312-0-custombugfixes'
 __author__ = 'Michael DeHaan'
