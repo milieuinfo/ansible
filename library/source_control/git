@@ -45,12 +45,13 @@ options:
               branch name, or a tag name.
     accept_hostkey:
         required: false
-        default: false
+        default: "no"
+        choices: [ "yes", "no" ]
         version_added: "1.5"
         description:
-            - Add the hostkey for the repo url if not already added.
-              If ssh_args contains "-o StrictHostKeyChecking=no", this
-              parameter is ignored.
+            - if C(yes), adds the hostkey for the repo url if not already 
+              added. If ssh_args contains "-o StrictHostKeyChecking=no", 
+              this parameter is ignored.
     ssh_opts:
         required: false
         default: None
@@ -122,7 +123,7 @@ notes:
     - "If the task seems to be hanging, first verify remote host is in C(known_hosts).
       SSH will prompt user to authorize the first contact with a remote host.  To avoid this prompt, 
       one solution is to add the remote host public key in C(/etc/ssh/ssh_known_hosts) before calling 
-      the git module, with the following command: ssh-keyscan remote_host.com >> /etc/ssh/ssh_known_hosts."
+      the git module, with the following command: ssh-keyscan -H remote_host.com >> /etc/ssh/ssh_known_hosts."
 '''
 
 EXAMPLES = '''
@@ -142,7 +143,8 @@ import re
 import tempfile
 
 def write_ssh_wrapper():
-    fd, wrapper_path = tempfile.mkstemp()
+    module_dir = get_module_path()
+    fd, wrapper_path = tempfile.mkstemp(prefix=module_dir + '/')
     fh = os.fdopen(fd, 'w+b')
     template = """#!/bin/sh
 if [ -z "$GIT_SSH_OPTS" ]; then
@@ -221,6 +223,7 @@ def has_local_mods(module, git_path, dest, bare):
     cmd = "%s status -s" % (git_path)
     rc, stdout, stderr = module.run_command(cmd, cwd=dest)
     lines = stdout.splitlines()
+    lines = filter(lambda c: not re.search('^\\?\\?.*$', c), lines)
 
     return len(lines) > 0
 
@@ -263,7 +266,7 @@ def get_remote_head(git_path, module, dest, version, remote, bare):
 
 def is_remote_tag(git_path, module, dest, remote, version):
     cmd = '%s ls-remote %s -t refs/tags/%s' % (git_path, remote, version)
-    (rc, out, err) = module.run_command(cmd, check_rc=True)
+    (rc, out, err) = module.run_command(cmd, check_rc=True, cwd=dest)
     if version in out:
         return True
     else:
@@ -291,7 +294,7 @@ def get_tags(git_path, module, dest):
 
 def is_remote_branch(git_path, module, dest, remote, version):
     cmd = '%s ls-remote %s -h refs/heads/%s' % (git_path, remote, version)
-    (rc, out, err) = module.run_command(cmd, check_rc=True)
+    (rc, out, err) = module.run_command(cmd, check_rc=True, cwd=dest)
     if version in out:
         return True
     else:

@@ -123,7 +123,7 @@ class RpmKey:
     def fetch_key(self, url, maxbytes=MAXBYTES):
         """Downloads a key from url, returns a valid path to a gpg key"""
         try:
-            rsp, info = fetch_url(self.module, url, validate_certs=self.module.params['validate_certs'])
+            rsp, info = fetch_url(self.module, url)
             key = rsp.read(maxbytes)
             if not is_pubkey(key):
                 self.module.fail_json(msg="Not a public key: %s" % url)
@@ -138,7 +138,9 @@ class RpmKey:
     def normalize_keyid(self, keyid):
         """Ensure a keyid doesn't have a leading 0x, has leading or trailing whitespace, and make sure is lowercase"""
         ret = keyid.strip().lower()
-        if ret.startswith(('0x', '0X')):
+        if ret.startswith('0x'):
+            return ret[2:]
+        elif ret.startswith('0X'):
             return ret[2:]
         else:
             return ret
@@ -148,9 +150,9 @@ class RpmKey:
         stdout, stderr = self.execute_command([gpg, '--no-tty', '--batch', '--with-colons', '--fixed-list-mode', '--list-packets', keyfile])
         for line in stdout.splitlines():
             line = line.strip()
-            if line.startswith('keyid:'):
+            if line.startswith(':signature packet:'):
                 # We want just the last 8 characters of the keyid
-                keyid = line.split(':')[1].strip()[8:]
+                keyid = line.split()[-1].strip()[8:]
                 return keyid
         self.json_fail(msg="Unexpected gpg output")
 
@@ -168,7 +170,7 @@ class RpmKey:
         return stdout, stderr
 
     def is_key_imported(self, keyid):
-        stdout, stderr = self.execute_command([self.rpm, '-q', 'gpg-pubkey'])
+        stdout, stderr = self.execute_command([self.rpm, '-qa', 'gpg-pubkey'])
         for line in stdout.splitlines():
             line = line.strip()
             if not line:

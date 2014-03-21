@@ -117,7 +117,7 @@ class Play(object):
         self.sudo             = ds.get('sudo', self.playbook.sudo)
         self.sudo_user        = ds.get('sudo_user', self.playbook.sudo_user)
         self.transport        = ds.get('connection', self.playbook.transport)
-        self.gather_facts     = ds.get('gather_facts', True)
+        self.gather_facts     = ds.get('gather_facts', None)
         self.remote_port      = self.remote_port
         self.any_errors_fatal = utils.boolean(ds.get('any_errors_fatal', 'false'))
         self.accelerate       = utils.boolean(ds.get('accelerate', 'false'))
@@ -134,6 +134,7 @@ class Play(object):
                                       '("su", "su_user") cannot be used together')
 
         load_vars = {}
+        load_vars['role_names'] = ds.get('role_names',[])
         load_vars['playbook_dir'] = self.basedir
         if self.playbook.inventory.basedir() is not None:
             load_vars['inventory_dir'] = self.playbook.inventory.basedir()
@@ -141,6 +142,8 @@ class Play(object):
         self._tasks      = self._load_tasks(self._ds.get('tasks', []), load_vars)
         self._handlers   = self._load_tasks(self._ds.get('handlers', []), load_vars)
 
+        # apply any missing tags to role tasks
+        self._late_merge_role_tags()
 
         if self.sudo_user != 'root':
             self.sudo = True
@@ -226,6 +229,25 @@ class Play(object):
                             meta_data = utils.parse_yaml_from_file(meta, vault_password=self.vault_password)
                             if meta_data:
                                 allow_dupes = utils.boolean(meta_data.get('allow_duplicates',''))
+
+                        # if any tags were specified as role/dep variables, merge
+                        # them into the current dep_vars so they're passed on to any 
+                        # further dependencies too, and so we only have one place
+                        # (dep_vars) to look for tags going forward
+                        def __merge_tags(var_obj):
+                            old_tags = dep_vars.get('tags', [])
+                            if isinstance(old_tags, basestring):
+                                old_tags = [old_tags, ]
+                            if isinstance(var_obj, dict):
+                                new_tags = var_obj.get('tags', [])
+                                if isinstance(new_tags, basestring):
+                                    new_tags = [new_tags, ]
+                            else:
+                                new_tags = []
+                            return list(set(old_tags).union(set(new_tags)))
+
+                        dep_vars['tags'] = __merge_tags(role_vars)
+                        dep_vars['tags'] = __merge_tags(passed_vars)
 
                         # if tags are set from this role, merge them
                         # into the tags list for the dependent role
@@ -335,6 +357,7 @@ class Play(object):
         new_tasks.append(dict(meta='flush_handlers'))
 
         roles = self._build_role_dependencies(roles, [], self.vars)
+        role_names = []
 
         for (role,role_path,role_vars,default_vars) in roles:
             # special vars must be extracted from the dict to the included tasks
@@ -367,6 +390,7 @@ class Play(object):
             else:
                 role_name = role
 
+            role_names.append(role_name)
             if os.path.isfile(task):
                 nt = dict(include=pipes.quote(task), vars=role_vars, default_vars=default_vars, role_name=role_name)
                 for k in special_keys:
@@ -413,6 +437,7 @@ class Play(object):
         ds['tasks'] = new_tasks
         ds['handlers'] = new_handlers
         ds['vars_files'] = new_vars_files
+        ds['role_names'] = role_names
 
         self.default_vars = self._load_role_defaults(defaults_files)
 
@@ -492,7 +517,11 @@ class Play(object):
                 include_vars = {}
                 for k in x:
                     if k.startswith("with_"):
-                        utils.deprecated("include + with_items is a removed deprecated feature", "1.5", removed=True)
+                        if original_file:
+                            offender = " (in %s)" % original_file
+                        else:
+                            offender = ""
+                        utils.deprecated("include + with_items is a removed deprecated feature" + offender, "1.5", removed=True)
                     elif k.startswith("when_"):
                         utils.deprecated("\"when_<criteria>:\" is a removed deprecated feature, use the simplified 'when:' conditional directly", None, removed=True)
                     elif k == 'when':
@@ -665,11 +694,15 @@ class Play(object):
         unmatched_tags: tags that were found within the current play but do not match
                         any provided by the user '''
 
-        # gather all the tags in all the tasks into one list
+        # gather all the tags in all the tasks and handlers into one list
+        # FIXME: isn't this in self.tags already?
+
         all_tags = []
         for task in self._tasks:
             if not task.meta:
                 all_tags.extend(task.tags)
+        for handler in self._handlers:
+            all_tags.extend(handler.tags)
 
         # compare the lists of tags using sets and return the matched and unmatched
         all_tags_set = set(all_tags)
@@ -681,8 +714,33 @@ class Play(object):
 
     # *************************************************
 
+    def _late_merge_role_tags(self):
+        # build a local dict of tags for roles
+        role_tags = {}
+        for task in self._ds['tasks']:
+            if 'role_name' in task:
+                this_role = task['role_name']
+
+                if this_role not in role_tags:
+                    role_tags[this_role] = []
+
+                if 'tags' in task['vars']:
+                    if isinstance(task['vars']['tags'], basestring):
+                        role_tags[task['role_name']] += shlex.split(task['vars']['tags'])
+                    else:
+                        role_tags[task['role_name']] += task['vars']['tags']
+
+        # apply each role's tags to it's tasks
+        for idx, val in enumerate(self._tasks):
+            if hasattr(val, 'role_name'):
+                this_role = val.role_name
+                if this_role in role_tags:
+                    self._tasks[idx].tags = sorted(set(self._tasks[idx].tags + role_tags[this_role]))
+
+    # *************************************************
+
     def _has_vars_in(self, msg):
-        return ((msg.find("$") != -1) or (msg.find("{{") != -1))
+        return "$" in msg or "{{" in msg
 
     # *************************************************
 
@@ -719,6 +777,7 @@ class Play(object):
                             if self._has_vars_in(filename2) and not self._has_vars_in(filename3):
                                 # this filename has variables in it that were fact specific
                                 # so it needs to be loaded into the per host SETUP_CACHE
+                                data = utils.combine_vars(inject, data)
                                 self.playbook.SETUP_CACHE[host].update(data)
                                 self.playbook.callbacks.on_import_for_host(host, filename4)
                         elif not self._has_vars_in(filename4):
@@ -751,6 +810,7 @@ class Play(object):
                     if host is not None and self._has_vars_in(filename2) and not self._has_vars_in(filename3):
                         # running a host specific pass and has host specific variables
                         # load into setup cache
+                        new_vars = utils.combine_vars(inject, new_vars)
                         self.playbook.SETUP_CACHE[host] = utils.combine_vars(
                             self.playbook.SETUP_CACHE[host], new_vars)
                         self.playbook.callbacks.on_import_for_host(host, filename4)

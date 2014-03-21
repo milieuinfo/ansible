@@ -217,6 +217,9 @@ class AnsibleModule(object):
         if not self.no_log:
             self._log_invocation()
 
+        # finally, make sure we're in a sane working dir
+        self._set_cwd()
+
     def load_file_common_arguments(self, params):
         '''
         many modules deal with files, this encapsulates common
@@ -464,7 +467,7 @@ class AnsibleModule(object):
                 changed = True
         return changed
 
-    def set_file_attributes_if_different(self, file_args, changed):
+    def set_fs_attributes_if_different(self, file_args, changed):
         # set modes owners and context as needed
         changed = self.set_context_if_different(
             file_args['path'], file_args['secontext'], changed
@@ -481,19 +484,10 @@ class AnsibleModule(object):
         return changed
 
     def set_directory_attributes_if_different(self, file_args, changed):
-        changed = self.set_context_if_different(
-            file_args['path'], file_args['secontext'], changed
-        )
-        changed = self.set_owner_if_different(
-            file_args['path'], file_args['owner'], changed
-        )
-        changed = self.set_group_if_different(
-            file_args['path'], file_args['group'], changed
-        )
-        changed = self.set_mode_if_different(
-            file_args['path'], file_args['mode'], changed
-        )
-        return changed
+        return self.set_fs_attributes_if_different(file_args, changed)
+
+    def set_file_attributes_if_different(self, file_args, changed):
+        return self.set_fs_attributes_if_different(file_args, changed)
 
     def add_path_info(self, kwargs):
         '''
@@ -824,6 +818,26 @@ class AnsibleModule(object):
             syslog.openlog(str(module), 0, syslog.LOG_USER)
             syslog.syslog(syslog.LOG_NOTICE, unicode(msg).encode('utf8'))
 
+    def _set_cwd(self):
+        try:
+            cwd = os.getcwd()
+            if not os.access(cwd, os.F_OK|os.R_OK):
+                raise
+            return cwd
+        except:
+            # we don't have access to the cwd, probably because of sudo. 
+            # Try and move to a neutral location to prevent errors
+            for cwd in [os.path.expandvars('$HOME'), tempfile.gettempdir()]:
+                try:
+                    if os.access(cwd, os.F_OK|os.R_OK):
+                        os.chdir(cwd)
+                        return cwd
+                except:
+                    pass
+        # we won't error here, as it may *not* be a problem, 
+        # and we don't want to break modules unnecessarily
+        return None    
+
     def get_bin_path(self, arg, required=False, opt_dirs=[]):
         '''
         find system executable in PATH.
@@ -963,7 +977,7 @@ class AnsibleModule(object):
                 context = self.selinux_default_context(dest)
 
         try:
-            # Optimistically try a rename, solves some corner cases and can avoid useless work.
+            # Optimistically try a rename, solves some corner cases and can avoid useless work, throws exception if not atomic.
             os.rename(src, dest)
         except (IOError,OSError), e:
             # only try workarounds for errno 18 (cross device), 1 (not permited) and 13 (permission denied)
@@ -1009,7 +1023,9 @@ class AnsibleModule(object):
 
         shell = False
         if isinstance(args, list):
-            pass
+            if use_unsafe_shell:
+                args = " ".join([pipes.quote(x) for x in args])
+                shell = True
         elif isinstance(args, basestring) and use_unsafe_shell:
             shell = True
         elif isinstance(args, basestring):
@@ -1017,6 +1033,10 @@ class AnsibleModule(object):
         else:
             msg = "Argument 'args' to run_command must be list or string"
             self.fail_json(rc=257, cmd=args, msg=msg)
+
+        # expand things like $HOME and ~
+        if not shell:
+            args = [ os.path.expandvars(os.path.expanduser(x)) for x in args ]
 
         rc = 0
         msg = None
@@ -1065,26 +1085,46 @@ class AnsibleModule(object):
 
         if path_prefix:
             kwargs['env'] = env
-        if cwd:
+        if cwd and os.path.isdir(cwd):
             kwargs['cwd'] = cwd
 
+        # store the pwd
+        prev_dir = os.getcwd()
+
+        # make sure we're in the right working directory
+        if cwd and os.path.isdir(cwd):
+            try:
+                os.chdir(cwd)
+            except (OSError, IOError), e:
+                self.fail_json(rc=e.errno, msg="Could not open %s , %s" % (cwd, str(e)))
 
         try:
             cmd = subprocess.Popen(args, **kwargs)
 
             if data:
                 if not binary_data:
-                    data += '\\n'
+                    data += '\n'
             out, err = cmd.communicate(input=data)
             rc = cmd.returncode
         except (OSError, IOError), e:
             self.fail_json(rc=e.errno, msg=str(e), cmd=clean_args)
         except:
             self.fail_json(rc=257, msg=traceback.format_exc(), cmd=clean_args)
+
         if rc != 0 and check_rc:
             msg = err.rstrip()
             self.fail_json(cmd=clean_args, rc=rc, stdout=out, stderr=err, msg=msg)
+
+        # reset the pwd
+        os.chdir(prev_dir)
+
         return (rc, out, err)
+
+    def append_to_file(self, filename, str):
+        filename = os.path.expandvars(os.path.expanduser(filename))
+        fh = open(filename, 'a')
+        fh.write(str)
+        fh.close()
 
     def pretty_bytes(self,size):
         ranges = (
@@ -1102,3 +1142,5 @@ class AnsibleModule(object):
                 break
         return '%.2f %s' % (float(size)/ limit, suffix)
 
+def get_module_path():
+    return os.path.dirname(os.path.realpath(__file__))

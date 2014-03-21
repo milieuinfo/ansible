@@ -1,14 +1,26 @@
-ansible (1.6.0-acd-20140312-0-custombugfixes) UNRELEASED; urgency=low
+ansible (1.6.0-acd-20140321-0) UNRELEASED; urgency=low
 
-  *  another bugfix release
+  * sync with upstream (1.6.0-acd-20140321-0)
 
- -- Serge van Ginderachter <serge@vanginderachter.be>  Wed, 12 Mar 2014 16:28:41 +0100
+ -- Serge van Ginderachter <serge@vanginderachter.be>  Fri, 21 Mar 2014 16:06:36 +0100
 
 ansible (1.6) unstable; urgency=low
 
   * 1.6 release (PENDING)
  
  -- Michael DeHaan <michael.dehaan@gmail.com>  Fri, 28 February 2014 15:00:03 -0500
+
+ansible (1.5.3) unstable; urgency=low
+
+  * 1.5.3 release
+
+  -- Michael DeHaan <michael@ansible.com>  Thu, 13 March 2014 08:46:00 -0500
+
+ansible (1.5.2) unstable; urgency=low
+
+  * 1.5.2 release
+
+  -- Michael DeHaan <michael@ansible.com>  Tue, 11 March 2014 08:46:00 -0500
 
 ansible (1.5.1) unstable; urgency=low
 

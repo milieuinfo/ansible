@@ -6,15 +6,52 @@ Ansible Changes By Release
 Major features/changes:
 
 * The deprecated legacy variable templating system has been finally removed.  Use {{ foo }} always not $foo or ${foo}.
+* Any data file can also be JSON.  Use sparingly -- with great power comes great responsibility.  Starting file with "{" or "[" denotes JSON.
+* Added 'gathering' param for ansible.cfg to change the default gather_facts policy.
 
 New Modules:
 
-* packaging: cpanm
+* packaging: cpanm (Perl)
+* packaging: portage
+* packaging: composer (PHP)
+* packaging: homebrew_tap (OS X)
+* packaging: homebrew_cask (OS X) 
+* notification: nexmo (SMS)
+* notification: twilio (SMS)
+* notification: slack (Slack.com)
+* notification: typetalk (Typetalk.in)
 * system: debconf
+* system: ufw
+* system: locale_gen
+* system: alternatives
+* system: capabilities
+* net_infrastructure: bigip_facts
+* cloud: digital_ocean_domain
+* cloud: digital_ocean_sshkey 
+* cloud: rax_identity
+* cloud: ec2_asg (configure autoscaling groups)
+* cloud: ec2_scaling_policy
+* cloud: ec2_metricalarm
 
 Other notable changes:
 
-* info pending
+* example callback plugin added for hipchat
+* added example inventory plugin for vcenter/vsphere
+* added example inventory plugin for doing really trivial inventory from SSH config files
+* libvirt module now supports destroyed and paused as states
+* s3 module can specify metadata
+* security token additions to ec2 modules
+* setup module code moved into module_utils/, facts now accessible by other modules  
+* misc bugfixes and other parameters
+
+## 1.5.3 "Love Walks In" - March 13, 2014
+
+- Fix validate_certs and run_command errors from previous release
+- Fixes to the git module related to host key checking
+
+## 1.5.2 "Love Walks In" - March 11, 2014
+
+- Fix module errors in airbrake and apt from previous release
 
 ## 1.5.1 "Love Walks In" - March 10, 2014
 

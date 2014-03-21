@@ -113,7 +113,6 @@ class VaultLib(object):
         # clean out header
         data = self._split_header(data)
 
-
         # create the cipher object
         if 'Vault' + self.cipher_name in globals() and self.cipher_name in CIPHER_WHITELIST: 
             cipher = globals()['Vault' + self.cipher_name]
@@ -123,6 +122,8 @@ class VaultLib(object):
 
         # try to unencrypt data
         data = this_cipher.decrypt(data, self.password)
+        if not data:
+            raise errors.AnsibleError("Decryption failed")
 
         return data            
 
@@ -182,7 +183,7 @@ class VaultEditor(object):
     def create_file(self):
         """ create a new encrypted file """
 
-        if not HAS_AES or not HAS_COUNTER or not HAS_PBKDF2:
+        if not HAS_AES or not HAS_COUNTER or not HAS_PBKDF2 or not HAS_HASH:
             raise errors.AnsibleError(CRYPTO_UPGRADE)
 
         if os.path.isfile(self.filename):
@@ -199,7 +200,7 @@ class VaultEditor(object):
 
     def decrypt_file(self):
 
-        if not HAS_AES or not HAS_COUNTER or not HAS_PBKDF2:
+        if not HAS_AES or not HAS_COUNTER or not HAS_PBKDF2 or not HAS_HASH:
             raise errors.AnsibleError(CRYPTO_UPGRADE)
 
         if not os.path.isfile(self.filename):
@@ -209,13 +210,16 @@ class VaultEditor(object):
         this_vault = VaultLib(self.password)
         if this_vault.is_encrypted(tmpdata):
             dec_data = this_vault.decrypt(tmpdata)
-            self.write_data(dec_data, self.filename)
+            if not dec_data:
+                raise errors.AnsibleError("Decryption failed")
+            else:
+                self.write_data(dec_data, self.filename)
         else:
             raise errors.AnsibleError("%s is not encrypted" % self.filename)
 
     def edit_file(self):
 
-        if not HAS_AES or not HAS_COUNTER or not HAS_PBKDF2:
+        if not HAS_AES or not HAS_COUNTER or not HAS_PBKDF2 or not HAS_HASH:
             raise errors.AnsibleError(CRYPTO_UPGRADE)
 
         # decrypt to tmpfile
@@ -245,7 +249,7 @@ class VaultEditor(object):
 
     def encrypt_file(self):
 
-        if not HAS_AES or not HAS_COUNTER or not HAS_PBKDF2:
+        if not HAS_AES or not HAS_COUNTER or not HAS_PBKDF2 or not HAS_HASH:
             raise errors.AnsibleError(CRYPTO_UPGRADE)
 
         if not os.path.isfile(self.filename):
@@ -262,7 +266,7 @@ class VaultEditor(object):
 
     def rekey_file(self, new_password):
 
-        if not HAS_AES or not HAS_COUNTER or not HAS_PBKDF2:
+        if not HAS_AES or not HAS_COUNTER or not HAS_PBKDF2 or not HAS_HASH:
             raise errors.AnsibleError(CRYPTO_UPGRADE)
 
         # decrypt 
@@ -420,6 +424,11 @@ class VaultAES256(object):
 
     # http://www.daemonology.net/blog/2009-06-11-cryptographic-right-answers.html
 
+    def __init__(self):
+
+        if not HAS_PBKDF2 or not HAS_COUNTER or not HAS_HASH:
+            raise errors.AnsibleError(CRYPTO_UPGRADE)
+
     def gen_key_initctr(self, password, salt):
         # 16 for AES 128, 32 for AES256
         keylength = 32
@@ -432,8 +441,6 @@ class VaultAES256(object):
         # make two keys and one iv
         pbkdf2_prf = lambda p, s: HMAC.new(p, s, hash_function).digest()
 
-        if not HAS_PBKDF2:
-            raise errors.AnsibleError(CRYPTO_UPGRADE)
 
         derivedkey = PBKDF2(password, salt, dkLen=(2 * keylength) + ivlength, 
                             count=10000, prf=pbkdf2_prf)
@@ -460,8 +467,6 @@ class VaultAES256(object):
         # 1) nbits (integer) - Length of the counter, in bits.
         # 2) initial_value (integer) - initial value of the counter. "iv" from gen_key_initctr
 
-        if not HAS_COUNTER:
-            raise errors.AnsibleError(CRYPTO_UPGRADE)
         ctr = Counter.new(128, initial_value=long(iv, 16))
 
         # AES.new PARAMETERS
@@ -497,8 +502,6 @@ class VaultAES256(object):
             return None
 
         # SET THE COUNTER AND THE CIPHER
-        if not HAS_COUNTER:
-            raise errors.AnsibleError(CRYPTO_UPGRADE)
         ctr = Counter.new(128, initial_value=long(iv, 16))
         cipher = AES.new(key1, AES.MODE_CTR, counter=ctr)
 

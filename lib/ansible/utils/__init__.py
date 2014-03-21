@@ -99,7 +99,7 @@ def key_for_hostname(hostname):
         raise errors.AnsibleError('ACCELERATE_KEYS_DIR is not a directory.')
 
     if stat.S_IMODE(os.stat(key_path).st_mode) != int(C.ACCELERATE_KEYS_DIR_PERMS, 8):
-        raise errors.AnsibleError('Incorrect permissions on ACCELERATE_KEYS_DIR (%s)' % (C.ACCELERATE_KEYS_DIR,))
+        raise errors.AnsibleError('Incorrect permissions on the private key directory. Use `chmod 0%o %s` to correct this issue, and make sure any of the keys files contained within that directory are set to 0%o' % (int(C.ACCELERATE_KEYS_DIR_PERMS, 8), C.ACCELERATE_KEYS_DIR, int(C.ACCELERATE_KEYS_FILE_PERMS, 8)))
 
     key_path = os.path.join(key_path, hostname)
 
@@ -113,7 +113,7 @@ def key_for_hostname(hostname):
         return key
     else:
         if stat.S_IMODE(os.stat(key_path).st_mode) != int(C.ACCELERATE_KEYS_FILE_PERMS, 8):
-            raise errors.AnsibleError('Incorrect permissions on ACCELERATE_KEYS_FILE (%s)' % (key_path,))
+            raise errors.AnsibleError('Incorrect permissions on the key file for this host. Use `chmod 0%o %s` to correct this issue.' % (int(C.ACCELERATE_KEYS_FILE_PERMS, 8), key_path))
         fh = open(key_path)
         key = AesKey.Read(fh.read())
         fh.close()
@@ -193,7 +193,7 @@ def check_conditional(conditional, basedir, inject, fail_on_undefined=False):
 
     conditional = conditional.replace("jinja2_compare ","")
     # allow variable names
-    if conditional in inject and str(inject[conditional]).find('-') == -1:
+    if conditional in inject and '-' not in str(inject[conditional]):
         conditional = inject[conditional]
     conditional = template.template(basedir, conditional, inject, fail_on_undefined=fail_on_undefined)
     original = str(conditional).replace("jinja2_compare ","")
@@ -206,9 +206,9 @@ def check_conditional(conditional, basedir, inject, fail_on_undefined=False):
         # variable was undefined. If we happened to be 
         # looking for an undefined variable, return True,
         # otherwise fail
-        if conditional.find("is undefined") != -1:
+        if "is undefined" in conditional:
             return True
-        elif conditional.find("is defined") != -1:
+        elif "is defined" in conditional:
             return False
         else:
             raise errors.AnsibleError("error while evaluating conditional: %s" % original)
@@ -331,9 +331,9 @@ def parse_json(raw_data):
 
 def smush_braces(data):
     ''' smush Jinaj2 braces so unresolved templates like {{ foo }} don't get parsed weird by key=value code '''
-    while data.find('{{ ') != -1:
+    while '{{ ' in data:
         data = data.replace('{{ ', '{{')
-    while data.find(' }}') != -1:
+    while ' }}' in data:
         data = data.replace(' }}', '}}')
     return data
 
@@ -374,7 +374,7 @@ def parse_yaml(data, path_hint=None):
 def process_common_errors(msg, probline, column):
     replaced = probline.replace(" ","")
 
-    if replaced.find(":{{") != -1 and replaced.find("}}") != -1:
+    if ":{{" in replaced and "}}" in replaced:
         msg = msg + """
 This one looks easy to fix.  YAML thought it was looking for the start of a 
 hash/dictionary and was confused to see a second "{".  Most likely this was
@@ -424,7 +424,7 @@ Or:
                 match = True
             elif middle.startswith('"') and not middle.endswith('"'):
                 match = True
-            if len(middle) > 0 and middle[0] in [ '"', "'" ] and middle[-1] in [ '"', "'" ] and probline.count("'") > 2 or probline.count("'") > 2:
+            if len(middle) > 0 and middle[0] in [ '"', "'" ] and middle[-1] in [ '"', "'" ] and probline.count("'") > 2 or probline.count('"') > 2:
                 unbalanced = True
             if match:
                 msg = msg + """
@@ -539,10 +539,16 @@ def parse_kv(args):
     if args is not None:
         # attempting to split a unicode here does bad things
         args = args.encode('utf-8')
-        vargs = [x.decode('utf-8') for x in shlex.split(args, posix=True)]
-        #vargs = shlex.split(str(args), posix=True)
+        try:
+            vargs = shlex.split(args, posix=True)
+        except ValueError, ve:
+            if 'no closing quotation' in str(ve).lower():
+                raise errors.AnsibleError("error parsing argument string, try quoting the entire line.")
+            else:
+                raise
+        vargs = [x.decode('utf-8') for x in vargs]
         for x in vargs:
-            if x.find("=") != -1:
+            if "=" in x:
                 k, v = x.split("=",1)
                 options[k]=v
     return options
@@ -803,6 +809,12 @@ def ask_vault_passwords(ask_vault_pass=False, ask_new_vault_pass=False, confirm_
         new_vault_pass2 = getpass.getpass(prompt="Confirm New Vault password: ")
         if new_vault_pass != new_vault_pass2:
             raise errors.AnsibleError("Passwords do not match")
+
+    # enforce no newline chars at the end of passwords
+    if vault_pass:
+        vault_pass = vault_pass.strip()
+    if new_vault_pass:
+        new_vault_pass = new_vault_pass.strip()
 
     return vault_pass, new_vault_pass
 
@@ -1095,5 +1107,6 @@ def before_comment(msg):
     msg = msg.split("#")[0]
     msg = msg.replace("**NOT_A_COMMENT**","#")
     return msg
+
 
 

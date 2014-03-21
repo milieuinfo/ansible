@@ -28,7 +28,6 @@ import collections
 import socket
 import base64
 import sys
-import shlex
 import pipes
 import jinja2
 import subprocess
@@ -415,7 +414,7 @@ class Runner(object):
 
         environment_string = self._compute_environment_string(inject)
 
-        if tmp.find("tmp") != -1 and ((self.sudo and self.sudo_user != 'root') or (self.su and self.su_user != 'root')):
+        if "tmp" in tmp and ((self.sudo and self.sudo_user != 'root') or (self.su and self.su_user != 'root')):
             # deal with possible umask issues once sudo'ed to other user
             cmd_chmod = "chmod a+r %s" % remote_module_path
             self._low_level_exec_command(conn, cmd_chmod, tmp, sudoable=False)
@@ -469,7 +468,7 @@ class Runner(object):
         cmd = " ".join([environment_string.strip(), shebang.replace("#!","").strip(), cmd])
         cmd = cmd.strip()
 
-        if tmp.find("tmp") != -1 and not C.DEFAULT_KEEP_REMOTE_FILES and not persist_files and delete_remote_tmp:
+        if "tmp" in tmp and not C.DEFAULT_KEEP_REMOTE_FILES and not persist_files and delete_remote_tmp:
             if not self.sudo or self.su or self.sudo_user == 'root' or self.su_user == 'root':
                 # not sudoing or sudoing to root, so can cleanup files in the same step
                 cmd = cmd + "; rm -rf %s >/dev/null 2>&1" % tmp
@@ -485,7 +484,7 @@ class Runner(object):
         else:
             res = self._low_level_exec_command(conn, cmd, tmp, sudoable=sudoable, in_data=in_data)
 
-        if tmp.find("tmp") != -1 and not C.DEFAULT_KEEP_REMOTE_FILES and not persist_files and delete_remote_tmp:
+        if "tmp" in tmp and not C.DEFAULT_KEEP_REMOTE_FILES and not persist_files and delete_remote_tmp:
             if (self.sudo and self.sudo_user != 'root') or (self.su and self.su_user != 'root'):
             # not sudoing to root, so maybe can't delete files as that other user
             # have to clean up temp files as original user in a second step
@@ -612,7 +611,6 @@ class Runner(object):
             if self.background > 0:
                 raise errors.AnsibleError("lookup plugins (with_*) cannot be used with async tasks")
 
-            aggregrate = {}
             all_comm_ok = True
             all_changed = False
             all_failed = False
@@ -711,9 +709,17 @@ class Runner(object):
         actual_transport = inject.get('ansible_connection', self.transport)
         actual_private_key_file = inject.get('ansible_ssh_private_key_file', self.private_key_file)
         actual_private_key_file = template.template(self.basedir, actual_private_key_file, inject, fail_on_undefined=True)
+        self.sudo = utils.boolean(inject.get('ansible_sudo', self.sudo))
+        self.sudo_user = inject.get('ansible_sudo_user', self.sudo_user)
         self.sudo_pass = inject.get('ansible_sudo_pass', self.sudo_pass)
         self.su = inject.get('ansible_su', self.su)
         self.su_pass = inject.get('ansible_su_pass', self.su_pass)
+
+        # select default root user in case self.sudo requested
+        # but no user specified; happens e.g. in host vars when
+        # just ansible_sudo=True is specified
+        if self.sudo and self.sudo_user is None:
+            self.sudo_user = 'root'
 
         if actual_private_key_file is not None:
             actual_private_key_file = os.path.expanduser(actual_private_key_file)
@@ -750,6 +756,7 @@ class Runner(object):
         # user/pass may still contain variables at this stage
         actual_user = template.template(self.basedir, actual_user, inject)
         actual_pass = template.template(self.basedir, actual_pass, inject)
+        self.sudo_pass = template.template(self.basedir, self.sudo_pass, inject)
 
         # make actual_user available as __magic__ ansible_ssh_user variable
         inject['ansible_ssh_user'] = actual_user
@@ -875,7 +882,7 @@ class Runner(object):
         return False
 
     def _late_needs_tmp_path(self, conn, tmp, module_style):
-        if tmp.find("tmp") != -1:
+        if "tmp" in tmp:
             # tmp has already been created
             return False
         if not conn.has_pipelining or not C.ANSIBLE_SSH_PIPELINING or C.DEFAULT_KEEP_REMOTE_FILES or self.su:

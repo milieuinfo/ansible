@@ -402,6 +402,10 @@ class PlayBook(object):
             ansible.callbacks.set_task(self.runner_callbacks, None)
             return True
 
+        # template ignore_errors
+        cond = template(play.basedir, task.ignore_errors, task.module_vars, expand_lists=False)
+        task.ignore_errors =  utils.check_conditional(cond , play.basedir, task.module_vars, fail_on_undefined=C.DEFAULT_UNDEFINED_VAR_BEHAVIOR)
+
         # load up an appropriate ansible runner to run the task in parallel
         results = self._run_task_internal(task)
 
@@ -475,10 +479,14 @@ class PlayBook(object):
     def _do_setup_step(self, play):
         ''' get facts from the remote system '''
 
-        if play.gather_facts is False:
-            return {}
-
         host_list = self._trim_unavailable_hosts(play._play_hosts)
+
+        if play.gather_facts is None and C.DEFAULT_GATHERING == 'smart':
+            host_list = [h for h in host_list if h not in self.SETUP_CACHE or 'module_setup' not in self.SETUP_CACHE[h]]
+            if len(host_list) == 0:
+                return {}
+        elif play.gather_facts is False or (play.gather_facts is None and C.DEFAULT_GATHERING == 'explicit'):
+            return {}
 
         self.callbacks.on_setup()
         self.inventory.restrict_to(host_list)

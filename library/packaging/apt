@@ -153,7 +153,7 @@ HAS_PYTHON_APT = True
 try:
     import apt
     import apt_pkg
-except:
+except ImportError:
     HAS_PYTHON_APT = False
 
 def package_split(pkgspec):
@@ -343,7 +343,11 @@ def upgrade(m, mode="yes", force=False,
         force_yes = ''
 
     apt_cmd_path = m.get_bin_path(apt_cmd, required=True)
-    cmd = '%s %s -y %s %s %s %s' % (APT_ENVVARS, apt_cmd_path, dpkg_options,
+
+    for (k,v) in APT_ENV_VARS.iteritems():
+        os.environ[k] = v
+
+    cmd = '%s -y %s %s %s %s' % (apt_cmd_path, dpkg_options,
                                     force_yes, check_arg, upgrade_command)
     rc, out, err = m.run_command(cmd)
     if rc:
@@ -373,7 +377,7 @@ def main():
 
     if not HAS_PYTHON_APT:
         try:
-            module.run_command('apt-get update && apt-get install python-apt -y -q')
+            module.run_command('apt-get update && apt-get install python-apt -y -q', use_unsafe_shell=True)
             global apt, apt_pkg
             import apt
             import apt_pkg

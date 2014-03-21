@@ -50,6 +50,32 @@ try:
 except:
     HAS_SSL=False
 
+import tempfile
+
+
+# This is a dummy cacert provided for Mac OS since you need at least 1
+# ca cert, regardless of validity, for Python on Mac OS to use the
+# keychain functionality in OpenSSL for validating SSL certificates.
+# See: http://mercurial.selenic.com/wiki/CACertificates#Mac_OS_X_10.6_and_higher
+DUMMY_CA_CERT = """-----BEGIN CERTIFICATE-----
+MIICvDCCAiWgAwIBAgIJAO8E12S7/qEpMA0GCSqGSIb3DQEBBQUAMEkxCzAJBgNV
+BAYTAlVTMRcwFQYDVQQIEw5Ob3J0aCBDYXJvbGluYTEPMA0GA1UEBxMGRHVyaGFt
+MRAwDgYDVQQKEwdBbnNpYmxlMB4XDTE0MDMxODIyMDAyMloXDTI0MDMxNTIyMDAy
+MlowSTELMAkGA1UEBhMCVVMxFzAVBgNVBAgTDk5vcnRoIENhcm9saW5hMQ8wDQYD
+VQQHEwZEdXJoYW0xEDAOBgNVBAoTB0Fuc2libGUwgZ8wDQYJKoZIhvcNAQEBBQAD
+gY0AMIGJAoGBANtvpPq3IlNlRbCHhZAcP6WCzhc5RbsDqyh1zrkmLi0GwcQ3z/r9
+gaWfQBYhHpobK2Tiq11TfraHeNB3/VfNImjZcGpN8Fl3MWwu7LfVkJy3gNNnxkA1
+4Go0/LmIvRFHhbzgfuo9NFgjPmmab9eqXJceqZIlz2C8xA7EeG7ku0+vAgMBAAGj
+gaswgagwHQYDVR0OBBYEFPnN1nPRqNDXGlCqCvdZchRNi/FaMHkGA1UdIwRyMHCA
+FPnN1nPRqNDXGlCqCvdZchRNi/FaoU2kSzBJMQswCQYDVQQGEwJVUzEXMBUGA1UE
+CBMOTm9ydGggQ2Fyb2xpbmExDzANBgNVBAcTBkR1cmhhbTEQMA4GA1UEChMHQW5z
+aWJsZYIJAO8E12S7/qEpMAwGA1UdEwQFMAMBAf8wDQYJKoZIhvcNAQEFBQADgYEA
+MUB80IR6knq9K/tY+hvPsZer6eFMzO3JGkRFBh2kn6JdMDnhYGX7AXVHGflrwNQH
+qFy+aenWXsC0ZvrikFxbQnX8GVtDADtVznxOi7XzFw7JOxdsVrpXgSN0eh0aMzvV
+zKPZsZ2miVGclicJHzm5q080b1p/sZtuKIEZk6vZqEg=
+-----END CERTIFICATE-----
+"""
+
 
 class RequestWithMethod(urllib2.Request):
     '''
@@ -77,59 +103,78 @@ class SSLValidationHandler(urllib2.BaseHandler):
     http://techknack.net/python-urllib2-handlers/
     '''
 
-    def __init__(self, module, hostname, port, ca_cert=None):
+    def __init__(self, module, hostname, port):
         self.module = module
         self.hostname = hostname
         self.port = port
-        self.ca_cert = ca_cert
 
-    def get_ca_cert(self):
+    def get_ca_certs(self):
         # tries to find a valid CA cert in one of the
         # standard locations for the current distribution
 
-        if self.ca_cert and os.path.exists(self.ca_cert):
-            # the user provided a custom CA cert (ie. one they
-            # uploaded themselves), so use it
-            return self.ca_cert
-
-        ca_cert = None
+        ca_certs = []
+        paths_checked = []
         platform = get_platform()
         distribution = get_distribution()
-        if platform == 'Linux':
-            if distribution in ('Fedora',):
-                ca_cert = '/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem'
-            elif distribution in ('RHEL','CentOS','ScientificLinux'):
-                ca_cert = '/etc/pki/tls/certs/ca-bundle.crt'
-            elif distribution in ('Ubuntu','Debian'):
-                ca_cert = '/usr/share/ca-certificates/cacert.org/cacert.org.crt'
-        elif platform == 'FreeBSD':
-            ca_cert = '/usr/local/share/certs/ca-root.crt'
-        elif platform == 'OpenBSD':
-            ca_cert = '/etc/ssl/cert.pem'
-        elif platform == 'NetBSD':
-            ca_cert = '/etc/openssl/certs/ca-cert.pem'
-        elif platform == 'SunOS':
-            # FIXME?
-            pass
-        elif platform == 'AIX':
-            # FIXME?
-            pass
 
-        if ca_cert and os.path.exists(ca_cert):
-            return ca_cert
-        elif os.path.exists('/etc/ansible/ca-cert.pem'):
-            # fall back to a user-deployed cert in a standard
-            # location if the OS platform one is not available
-            return '/etc/ansible/ca-cert.pem'
-        else:
-            # CA cert isn't available, no validation
-            return None
+        # build a list of paths to check for .crt/.pem files
+        # based on the platform type
+        paths_checked.append('/etc/ssl/certs')
+        if platform == 'Linux':
+            paths_checked.append('/etc/pki/ca-trust/extracted/pem')
+            paths_checked.append('/etc/pki/tls/certs')
+            paths_checked.append('/usr/share/ca-certificates/cacert.org')
+        elif platform == 'FreeBSD':
+            paths_checked.append('/usr/local/share/certs')
+        elif platform == 'OpenBSD':
+            paths_checked.append('/etc/ssl')
+        elif platform == 'NetBSD':
+            ca_certs.append('/etc/openssl/certs')
+
+        # fall back to a user-deployed cert in a standard
+        # location if the OS platform one is not available
+        paths_checked.append('/etc/ansible')
+
+        tmp_fd, tmp_path = tempfile.mkstemp()
+
+        # Write the dummy ca cert if we are running on Mac OS X
+        if platform == 'Darwin':
+            os.write(tmp_fd, DUMMY_CA_CERT)
+
+        # for all of the paths, find any  .crt or .pem files
+        # and compile them into single temp file for use
+        # in the ssl check to speed up the test
+        for path in paths_checked:
+            if os.path.exists(path) and os.path.isdir(path):
+                dir_contents = os.listdir(path)
+                for f in dir_contents:
+                    full_path = os.path.join(path, f)
+                    if os.path.isfile(full_path) and os.path.splitext(f)[1] in ('.crt','.pem'):
+                        try:
+                            cert_file = open(full_path, 'r')
+                            os.write(tmp_fd, cert_file.read())
+                            cert_file.close()
+                        except:
+                            pass
+
+        return (tmp_path, paths_checked)
 
     def http_request(self, req):
+        tmp_ca_cert_path, paths_checked = self.get_ca_certs()
         try:
-            server_cert = ssl.get_server_certificate((self.hostname, self.port), ca_certs=self.get_ca_cert())
+            server_cert = ssl.get_server_certificate((self.hostname, self.port), ca_certs=tmp_ca_cert_path)
         except ssl.SSLError:
-            self.module.fail_json(msg='failed to validate the SSL certificate for %s:%s. You can use validate_certs=no, however this is unsafe and not recommended' % (self.hostname, self.port))
+            # fail if we tried all of the certs but none worked
+            self.module.fail_json(msg='Failed to validate the SSL certificate for %s:%s. ' % (self.hostname, self.port) + \
+                                      'Use validate_certs=no or make sure your managed systems have a valid CA certificate installed. ' + \
+                                      'Paths checked for this platform: %s' % ", ".join(paths_checked))
+        try:
+            # cleanup the temp file created, don't worry
+            # if it fails for some reason
+            os.remove(tmp_ca_cert_path)
+        except:
+            pass
+
         return req
 
     https_request = http_request
@@ -150,7 +195,7 @@ def url_argument_spec():
 
 
 def fetch_url(module, url, data=None, headers=None, method=None, 
-              use_proxy=False, validate_certs=True, force=False, last_mod_time=None, timeout=10):
+              use_proxy=False, force=False, last_mod_time=None, timeout=10):
     '''
     Fetches a file from an HTTP/FTP server using urllib2
     '''
@@ -165,6 +210,9 @@ def fetch_url(module, url, data=None, headers=None, method=None,
     r = None
     handlers = []
     info = dict(url=url)
+
+    # Get validate_certs from the module params
+    validate_certs = module.params.get('validate_certs', True)
 
     parsed = urlparse.urlparse(url)
     if parsed[0] == 'https':
@@ -185,7 +233,7 @@ def fetch_url(module, url, data=None, headers=None, method=None,
             ssl_handler = SSLValidationHandler(module, hostname, port)
             handlers.append(ssl_handler)
 
-    if '@' in parsed[1]:
+    if parsed[0] != 'ftp' and '@' in parsed[1]:
         credentials, netloc = parsed[1].split('@', 1)
         if ':' in credentials:
             username, password = credentials.split(':', 1)
