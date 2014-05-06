@@ -1,14 +1,26 @@
-ansible (1.6.0-acd-20140321-0) UNRELEASED; urgency=low
+ansible (1.6.0-acd-20140506-1.6.0-0) UNRELEASED; urgency=low
 
-  * sync with upstream (1.6.0-acd-20140321-0)
+  * release 1.6.0
 
- -- Serge van Ginderachter <serge@vanginderachter.be>  Fri, 21 Mar 2014 16:06:36 +0100
+ -- Serge van Ginderachter <serge@vanginderachter.be>  Tue, 06 May 2014 09:36:19 +0200
 
 ansible (1.6) unstable; urgency=low
 
-  * 1.6 release (PENDING)
+  * 1.6.0 release
  
- -- Michael DeHaan <michael.dehaan@gmail.com>  Fri, 28 February 2014 15:00:03 -0500
+ -- Michael DeHaan <michael.dehaan@gmail.com>  Mon, 05 May 2014 17:30:03 -0500
+
+ansible (1.5.5) unstable; urgency=low
+
+  * 1.5.5 release
+
+  -- Michael DeHaan <michael@ansible.com>  Fri, 18 April 2014 15:00:00 -0500
+
+ansible (1.5.4) unstable; urgency=low
+
+  * 1.5.4 release
+
+  -- Michael DeHaan <michael@ansible.com>  Tue, 01 April 2014 08:46:00 -0500
 
 ansible (1.5.3) unstable; urgency=low
 
